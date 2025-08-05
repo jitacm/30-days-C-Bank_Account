@@ -14,18 +14,89 @@ void createAccount() {
     printf("Enter account number, name, and initial balance: ");
     scanf("%d %s %f", &a.acc_no, a.name, &a.balance);
 
-    // Currently just prints the account info
-    printf("Account Created: %d, Name: %s, Balance: %.2f\n", a.acc_no, a.name, a.balance);
-}
+    FILE *fp = fopen("accounts.dat", "ab");
+    if (!fp) {
+        printf("Error opening accounts file.\n");
+        return;
+    }
+    fwrite(&a, sizeof(struct Account), 1, fp);
+    fclose(fp);
 
-// TODO: Withdraw amount from account
-void withdraw() {
-    printf("Withdraw function is not implemented yet.\n");
+    printf("Account Created: %d, Name: %s, Balance: %.2f\n", a.acc_no, a.name, a.balance);
 }
 
 // TODO: Save deposit to file
 void deposit() {
-    printf("Deposit function is not implemented yet.\n");
+    int acc_no;
+    float amount;
+    int found = 0;
+
+    printf("Enter account number: ");
+    scanf("%d", &acc_no);
+    printf("Enter amount to deposit: ");
+    scanf("%f", &amount);
+
+    FILE *fp = fopen("accounts.dat", "rb+");
+    if (!fp) {
+        printf("No accounts found.\n");
+        return;
+    }
+
+    struct Account a;
+    while (fread(&a, sizeof(struct Account), 1, fp)) {
+        if (a.acc_no == acc_no) {
+            found = 1;
+            a.balance += amount;
+            fseek(fp, -sizeof(struct Account), SEEK_CUR);
+            fwrite(&a, sizeof(struct Account), 1, fp);
+            printf("Deposit successful. New balance: %.2f\n", a.balance);
+            break;
+        }
+    }
+    fclose(fp);
+
+    if (!found) {
+        printf("Account not found.\n");
+    }
+}
+
+
+void withdraw() {
+    int acc_no;
+    float amount;
+    int found = 0;
+
+    printf("Enter account number: ");
+    scanf("%d", &acc_no);
+    printf("Enter amount to withdraw: ");
+    scanf("%f", &amount);
+
+    FILE *fp = fopen("accounts.dat", "rb+");
+    if (!fp) {
+        printf("No accounts found.\n");
+        return;
+    }
+
+    struct Account a;
+    while (fread(&a, sizeof(struct Account), 1, fp)) {
+        if (a.acc_no == acc_no) {
+            found = 1;
+            if (a.balance >= amount) {
+                a.balance -= amount;
+                fseek(fp, -sizeof(struct Account), SEEK_CUR);
+                fwrite(&a, sizeof(struct Account), 1, fp);
+                printf("Withdraw successful. New balance: %.2f\n", a.balance);
+            } else {
+                printf("Insufficient balance.\n");
+            }
+            break;
+        }
+    }
+    fclose(fp);
+
+    if (!found) {
+        printf("Account not found.\n");
+    }
 }
 
 int main() {
