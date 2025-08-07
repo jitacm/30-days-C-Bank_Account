@@ -275,7 +275,7 @@ void withdraw()
     }
 }
 
-// Enhanced: Fixed tabular look with wider columns for proper alignment
+// Enhanced: Tabular look, allows long balances and wide table
 void viewAccounts()
 {
     FILE *fp = fopen("accounts.dat", "rb");
@@ -285,14 +285,14 @@ void viewAccounts()
         return;
     }
     struct Account a;
-    printf(BLUE "\n+-------------+---------------------------+------------------------------+\n" RESET);
-    printf(BLUE "| Account No  | Name                      | Balance                      |\n" RESET);
-    printf(BLUE "+-------------+---------------------------+------------------------------+\n" RESET);
+    printf(BLUE "\n+-------------+----------------------+--------------------------+\n" RESET);
+    printf(BLUE "| Account No  | Name                 | Balance                  |\n" RESET);
+    printf(BLUE "+-------------+----------------------+--------------------------+\n" RESET);
     while (fread(&a, sizeof(struct Account), 1, fp))
     {
-        printf("| %-11d | %-25s | %-28.2f |\n", a.acc_no, a.name, a.balance);
+        printf("| %-11d | %-20s | %-24.2f |\n", a.acc_no, a.name, a.balance);
     }
-    printf(BLUE "+-------------+---------------------------+------------------------------+\n" RESET);
+    printf(BLUE "+-------------+----------------------+--------------------------+\n" RESET);
     fclose(fp);
 }
 
