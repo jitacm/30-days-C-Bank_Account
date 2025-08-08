@@ -1,4 +1,4 @@
-include <stdio.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -10,7 +10,6 @@ include <stdio.h>
 #else
 #include <termios.h>
 #include <unistd.h>
-#define CLEAR "clear"
 #endif
 
 #define RED     "\x1b[31m"
@@ -212,7 +211,7 @@ void updateAccountName();
 void deleteAccount();
 void printHex(const unsigned char *data, size_t len);
 void flush_stdin(void);
-void getPlainPinInput(char *buffer, size_t size);
+void getMaskedInput(char *buffer, size_t size);
 
 void generateSalt(unsigned char *salt, size_t length) {
     for (size_t i = 0; i < length; i++) {
@@ -247,7 +246,7 @@ int accountExists(int acc_no)
 }
 
 /* Authentication for this instance:
- * - Simply hashes pin_input with the stored salt and compares with stored hash.
+ * - Hashes pin_input with the stored salt and compares with stored hash.
  * - No incrementing failed attempts, no lockout.
  */
 int authenticate(int acc_no, const char *pin_input)
@@ -311,9 +310,9 @@ void createAccount()
         return;
     }
 
-    // Get PIN as plain input (no masking in this instance)
+    // Get PIN masked input
     printf(GREEN "Set a 4-digit PIN: " RESET);
-    getPlainPinInput(pin_str, sizeof(pin_str));
+    getMaskedInput(pin_str, sizeof(pin_str));
     if (strlen(pin_str) != 4 || strspn(pin_str, "0123456789") != 4)
     {
         printf(RED "Invalid PIN. Must be exactly 4 digits.\n" RESET);
@@ -369,7 +368,7 @@ void deposit()
     }
     printf(GREEN "Enter your PIN: " RESET);
     while ((ch = getchar()) != '\n' && ch != EOF); // flush newline
-    getPlainPinInput(pin_str, sizeof(pin_str));
+    getMaskedInput(pin_str, sizeof(pin_str));
 
     if (!authenticate(acc_no, pin_str))
     {
@@ -434,7 +433,7 @@ void withdraw()
     }
     printf(GREEN "Enter your PIN: " RESET);
     while ((ch = getchar()) != '\n' && ch != EOF);
-    getPlainPinInput(pin_str, sizeof(pin_str));
+    getMaskedInput(pin_str, sizeof(pin_str));
 
     if (!authenticate(acc_no, pin_str))
     {
@@ -524,7 +523,7 @@ void searchAccount()
     }
     printf(GREEN "Enter PIN for authentication: " RESET);
     while ((ch = getchar()) != '\n' && ch != EOF);
-    getPlainPinInput(pin_str, sizeof(pin_str));
+    getMaskedInput(pin_str, sizeof(pin_str));
 
     FILE *fp = fopen("accounts.dat", "rb");
     if (!fp)
@@ -579,7 +578,7 @@ void updateAccountName()
 
     printf(GREEN "Enter PIN for authentication: " RESET);
     while ((ch = getchar()) != '\n' && ch != EOF);
-    getPlainPinInput(pin_str, sizeof(pin_str));
+    getMaskedInput(pin_str, sizeof(pin_str));
 
     printf(GREEN "Enter new account holder name: " RESET);
     while ((ch = getchar()) != '\n' && ch != EOF);
@@ -650,7 +649,7 @@ void deleteAccount()
 
     printf(GREEN "Enter PIN for authentication: " RESET);
     while ((ch = getchar()) != '\n' && ch != EOF);
-    getPlainPinInput(pin_str, sizeof(pin_str));
+    getMaskedInput(pin_str, sizeof(pin_str));
 
     FILE *fp = fopen("accounts.dat", "rb");
     if (!fp)
@@ -719,19 +718,53 @@ void flush_stdin(void)
     while ((c = getchar()) != '\n' && c != EOF);
 }
 
-/* Simple plain PIN input helper: reads a line and trims newline.
- * No masking in this instance.
+/* Cross-platform masked PIN input:
+ * - On Windows uses _getch()
+ * - On Unix uses termios to disable echo
+ * Accepts backspace. Stops on Enter. Writes null-terminated string.
  */
-void getPlainPinInput(char *buffer, size_t size)
+void getMaskedInput(char *buffer, size_t size)
 {
-    if (!fgets(buffer, (int)size, stdin))
-    {
-        buffer[0] = '\0';
-        return;
+    if (size == 0) return;
+    size_t idx = 0;
+#ifdef _WIN32
+    int ch;
+    while ((ch = _getch()) != '\r' && ch != EOF) {
+        if (ch == '\b' || ch == 127) { // backspace
+            if (idx > 0) {
+                idx--;
+                printf("\b \b");
+            }
+        } else if (ch >= ' ' && ch <= '~' && idx + 1 < size) {
+            buffer[idx++] = (char)ch;
+            printf("*");
+        }
     }
-    size_t len = strlen(buffer);
-    if (len > 0 && buffer[len-1] == '\n')
-        buffer[len-1] = '\0';
+    buffer[idx] = '\0';
+    printf("\n");
+#else
+    struct termios oldt, newt;
+    tcgetattr(STDIN_FILENO, &oldt);
+    newt = oldt;
+    newt.c_lflag &= ~(ECHO);
+    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+
+    int ch;
+    while ((ch = getchar()) != '\n' && ch != EOF) {
+        if (ch == 127 || ch == '\b') { // backspace
+            if (idx > 0) {
+                idx--;
+                printf("\b \b");
+            }
+        } else if (ch >= ' ' && ch <= '~' && idx + 1 < size) {
+            buffer[idx++] = (char)ch;
+            printf("*");
+        }
+    }
+    buffer[idx] = '\0';
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+    printf("\n");
+#endif
 }
 
 int main()
@@ -741,7 +774,7 @@ int main()
     while (1)
     {
         int choice;
-        printf("\n" BLUE "=== CLI Banking System (Instance 1 — Feature 1 only) ===\n" RESET);
+        printf("\n" BLUE "=== CLI Banking System (Instance 2 — Features 1+2) ===\n" RESET);
         printf("1. Create Account\n");
         printf("2. Deposit\n");
         printf("3. Withdraw\n");
