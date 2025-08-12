@@ -10,6 +10,7 @@
 #else
 #include <termios.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #endif
 
 #define RED    "\x1b[31m"
@@ -20,7 +21,10 @@
 
 #define SALT_SIZE 16
 #define HASH_SIZE 32
-#define ADMIN_PIN "9999"
+
+#define ADMIN_FILE "admin.dat"
+#define ADMIN_MAGIC "ADM1v1"
+#define ADMIN_MAGIC_LEN 6
 
 // --- SHA-256 Implementation (public domain) ---
 typedef unsigned char BYTE;             // 8-bit byte
@@ -197,6 +201,12 @@ struct Account
     int locked;
 };
 
+typedef struct {
+    char magic[8];
+    unsigned char salt[SALT_SIZE];
+    unsigned char pin_hash[HASH_SIZE];
+} AdminRecord;
+
 // ------- UTILITY FUNCTIONS -------
 void generateSalt(unsigned char *salt, size_t length);
 void hashPin(const char *pin, const unsigned char *salt, size_t salt_len, unsigned char *out_hash);
@@ -213,6 +223,12 @@ void deleteAccount();
 void printHex(const unsigned char *data, size_t len);
 void flush_stdin(void);
 void getMaskedInput(char *buffer, size_t size);
+
+// Admin credential helpers
+int loadAdminCredentials(unsigned char *salt, unsigned char *hash);
+int saveAdminCredentials(const unsigned char *salt, const unsigned char *hash);
+int setAdminPinInteractive(void);
+int adminInitIfNeeded(void);
 
 void generateSalt(unsigned char *salt, size_t length) {
     for (size_t i = 0; i < length; i++) {
@@ -294,8 +310,89 @@ int authenticate(int acc_no, const char *pin_input) {
     }
 }
 
+// --- Admin credentials (secure storage) ---
+
+int loadAdminCredentials(unsigned char *salt, unsigned char *hash) {
+    FILE *fp = fopen(ADMIN_FILE, "rb");
+    if (!fp) return 0;
+    AdminRecord rec;
+    size_t r = fread(&rec, sizeof(AdminRecord), 1, fp);
+    fclose(fp);
+    if (r != 1) return 0;
+    if (memcmp(rec.magic, ADMIN_MAGIC, ADMIN_MAGIC_LEN) != 0) return 0;
+    memcpy(salt, rec.salt, SALT_SIZE);
+    memcpy(hash, rec.pin_hash, HASH_SIZE);
+    return 1;
+}
+
+int saveAdminCredentials(const unsigned char *salt, const unsigned char *hash) {
+    FILE *fp = fopen(ADMIN_FILE, "wb");
+    if (!fp) return 0;
+    AdminRecord rec;
+    memset(&rec, 0, sizeof(rec));
+    memcpy(rec.magic, ADMIN_MAGIC, ADMIN_MAGIC_LEN);
+    memcpy(rec.salt, salt, SALT_SIZE);
+    memcpy(rec.pin_hash, hash, HASH_SIZE);
+    size_t w = fwrite(&rec, sizeof(AdminRecord), 1, fp);
+    fclose(fp);
+#ifndef _WIN32
+    // Restrict permissions on Unix-like systems: owner read/write only
+    chmod(ADMIN_FILE, S_IRUSR | S_IWUSR);
+#endif
+    return w == 1;
+}
+
+int setAdminPinInteractive(void) {
+    char pin1[64], pin2[64];
+
+    while (1) {
+        printf(YELLOW "\nNo admin PIN configured.\n" RESET);
+        printf(GREEN "Set admin PIN (4-12 digits): " RESET);
+        getMaskedInput(pin1, sizeof(pin1));
+        size_t n = strlen(pin1);
+        if (n < 4 || n > 12 || strspn(pin1, "0123456789") != n) {
+            printf(RED "Invalid PIN. Must be 4-12 digits.\n" RESET);
+            continue;
+        }
+
+        printf(GREEN "Confirm admin PIN: " RESET);
+        getMaskedInput(pin2, sizeof(pin2));
+        if (strcmp(pin1, pin2) != 0) {
+            printf(RED "PINs do not match. Try again.\n" RESET);
+            continue;
+        }
+
+        unsigned char salt[SALT_SIZE];
+        unsigned char hash[HASH_SIZE];
+        generateSalt(salt, SALT_SIZE);
+        hashPin(pin1, salt, SALT_SIZE, hash);
+
+        memset(pin1, 0, sizeof(pin1));
+        memset(pin2, 0, sizeof(pin2));
+
+        if (!saveAdminCredentials(salt, hash)) {
+            printf(RED "Failed to save admin PIN. Please try again.\n" RESET);
+            return 0;
+        }
+
+        printf(GREEN "Admin PIN set successfully.\n" RESET);
+        return 1;
+    }
+}
+
+int adminInitIfNeeded(void) {
+    unsigned char salt[SALT_SIZE], hash[HASH_SIZE];
+    if (loadAdminCredentials(salt, hash)) return 1;
+    return setAdminPinInteractive();
+}
+
 int authenticateAdmin(const char *pin_input) {
-    return strcmp(pin_input, ADMIN_PIN) == 0;
+    unsigned char salt[SALT_SIZE], stored_hash[HASH_SIZE], input_hash[HASH_SIZE];
+    if (!loadAdminCredentials(salt, stored_hash)) {
+        return 0;
+    }
+    hashPin(pin_input, salt, SALT_SIZE, input_hash);
+    return memcmp(input_hash, stored_hash, HASH_SIZE) == 0;
 }
 
 // ------- CORE FEATURES -------
@@ -566,6 +663,7 @@ void updateAccountName()
 
     printf(YELLOW "*** ADMIN AUTHENTICATION REQUIRED ***\n" RESET);
     printf(GREEN "Enter admin PIN: " RESET);
+    while ((ch = getchar()) != '\n' && ch != EOF); // ensure clean buffer
     getMaskedInput(admin_pin, sizeof(admin_pin));
     
     if (!authenticateAdmin(admin_pin)) {
@@ -631,6 +729,7 @@ void deleteAccount()
 
     printf(YELLOW "*** ADMIN AUTHENTICATION REQUIRED ***\n" RESET);
     printf(GREEN "Enter admin PIN: " RESET);
+    while ((ch = getchar()) != '\n' && ch != EOF); // ensure clean buffer
     getMaskedInput(admin_pin, sizeof(admin_pin));
     
     if (!authenticateAdmin(admin_pin)) {
@@ -756,6 +855,11 @@ void getMaskedInput(char *buffer, size_t size)
 int main()
 {
     srand((unsigned int)time(NULL));
+
+    if (!adminInitIfNeeded()) {
+        printf(RED "Failed to initialize admin credentials. Exiting.\n" RESET);
+        return 1;
+    }
 
     while (1)
     {
