@@ -12,22 +12,31 @@
 #include <unistd.h>
 #endif
 
-#define RED     "\x1b[31m"
-#define GREEN   "\x1b[32m"
-#define YELLOW  "\x1b[33m"
-#define BLUE    "\x1b[34m"
-#define RESET   "\x1b[0m"
+ 
+#define RED    "\x1b[31m"
+#define GREEN  "\x1b[32m"
+#define YELLOW "\x1b[33m"
+#define BLUE   "\x1b[34m"
+#define RESET  "\x1b[0m"
+
+// ------- STRUCT DEFINITION -------
+struct Account {
+
+#define RED    "\x1b[31m"
+#define GREEN  "\x1b[32m"
+#define YELLOW "\x1b[33m"
+#define BLUE   "\x1b[34m"
+#define RESET  "\x1b[0m"
 
 #define SALT_SIZE 16
 #define HASH_SIZE 32
 
 // --- SHA-256 Implementation (public domain) ---
 typedef unsigned char BYTE;             // 8-bit byte
-typedef unsigned int  WORD;             // 32-bit word
+typedef unsigned int  WORD;              // 32-bit word
 
 #define ROTLEFT(a,b) (((a) << (b)) | ((a) >> (32-(b))))
 #define ROTRIGHT(a,b) (((a) >> (b)) | ((a) << (32-(b))))
-
 #define CH(x,y,z) (((x) & (y)) ^ (~(x) & (z)))
 #define MAJ(x,y,z) (((x) & (y)) ^ ((x) & (z)) ^ ((y) & (z)))
 #define EP0(x) (ROTRIGHT(x,2) ^ ROTRIGHT(x,13) ^ ROTRIGHT(x,22))
@@ -41,6 +50,7 @@ typedef struct {
     unsigned long long bitlen;
     WORD state[8];
 } SHA256_CTX;
+
 
 void sha256_transform(SHA256_CTX *ctx, const BYTE data[])
 {
@@ -188,6 +198,7 @@ void sha256(const BYTE *data, size_t len, BYTE *out_hash)
 
 struct Account
 {
+
     int acc_no;
     char name[100];
     float balance;
@@ -196,6 +207,10 @@ struct Account
     int failed_attempts; // present but unused in this instance
     int locked; // present but unused in this instance
 };
+
+
+// ------- UTILITY FUNCTIONS -------
+int accountExists(int acc_no) {
 
 // Function prototypes
 void generateSalt(unsigned char *salt, size_t length);
@@ -213,12 +228,6 @@ void printHex(const unsigned char *data, size_t len);
 void flush_stdin(void);
 void getMaskedInput(char *buffer, size_t size);
 
-void generateSalt(unsigned char *salt, size_t length) {
-    for (size_t i = 0; i < length; i++) {
-        salt[i] = rand() % 256;
-    }
-}
-
 void hashPin(const char *pin, const unsigned char *salt, size_t salt_len, unsigned char *out_hash) {
     SHA256_CTX ctx;
     sha256_init(&ctx);
@@ -229,14 +238,12 @@ void hashPin(const char *pin, const unsigned char *salt, size_t salt_len, unsign
 
 int accountExists(int acc_no)
 {
+
     FILE *fp = fopen("accounts.dat", "rb");
-    if (!fp)
-        return 0;
+    if (!fp) return 0;
     struct Account a;
-    while (fread(&a, sizeof(struct Account), 1, fp))
-    {
-        if (a.acc_no == acc_no)
-        {
+    while (fread(&a, sizeof(struct Account), 1, fp)) {
+        if (a.acc_no == acc_no) {
             fclose(fp);
             return 1;
         }
@@ -244,6 +251,11 @@ int accountExists(int acc_no)
     fclose(fp);
     return 0;
 }
+
+
+int authenticate(int acc_no, int pin) {
+    FILE *fp = fopen("accounts.dat", "rb");
+    if (!fp) return 0;
 
 /* Authentication for this instance:
  * - Hashes pin_input with the stored salt and compares with stored hash.
@@ -255,20 +267,27 @@ int authenticate(int acc_no, const char *pin_input)
     if (!fp)
         return 0;
 
+
     struct Account a;
     unsigned char input_hash[HASH_SIZE];
     int result = 0;
 
-    while (fread(&a, sizeof(struct Account), 1, fp))
-    {
-        if (a.acc_no == acc_no)
-        {
-            hashPin(pin_input, a.salt, SALT_SIZE, input_hash);
+    while (fread(&a, sizeof(struct Account), 1, fp)) {
+        if (a.acc_no == acc_no && a.pin == pin) {
+            result = 1;
 
-            if (memcmp(input_hash, a.pin_hash, HASH_SIZE) == 0)
-            {
-                result = 1;
-            }
+
+   while (fread(&a, sizeof(struct Account), 1, fp))
+{
+    if (a.acc_no == acc_no)
+    {
+        unsigned char input_hash[HASH_SIZE];
+        hashPin(pin_input, a.salt, SALT_SIZE, input_hash);
+        if (memcmp(input_hash, a.pin_hash, HASH_SIZE) == 0)
+        {
+            result = 1;
+        }
+
             break;
         }
     }
@@ -276,46 +295,55 @@ int authenticate(int acc_no, const char *pin_input)
     return result;
 }
 
+
+// ------- CORE FEATURES -------
+
+
 void createAccount()
 {
+
     struct Account a;
     char pin_str[32];
     int ch;
 
     printf(GREEN "Enter account number: " RESET);
-    if (scanf("%d", &a.acc_no) != 1)
-    {
+    if (scanf("%d", &a.acc_no) != 1) {
         printf(RED "Invalid account number input.\n" RESET);
+
+        int ch;
+
         while ((ch = getchar()) != '\n' && ch != EOF);
         return;
     }
-    if (accountExists(a.acc_no))
-    {
+    if (accountExists(a.acc_no)) {
         printf(RED "Account number already exists. Choose another.\n" RESET);
         return;
     }
     printf(GREEN "Enter account holder name: " RESET);
+
+    int ch;
     while ((ch = getchar()) != '\n' && ch != EOF); // Flush newline before fgets
-    if (!fgets(a.name, sizeof(a.name), stdin))
-    {
+    if (!fgets(a.name, sizeof(a.name), stdin)) {
+
         printf(RED "Invalid name input.\n" RESET);
         return;
     }
     size_t len = strlen(a.name);
     if (len > 0 && a.name[len - 1] == '\n')
         a.name[len - 1] = '\0';
-    if (strlen(a.name) == 0)
-    {
+    if (strlen(a.name) == 0) {
         printf(RED "Name cannot be empty.\n" RESET);
         return;
     }
 
     // Get PIN masked input
     printf(GREEN "Set a 4-digit PIN: " RESET);
+
     getMaskedInput(pin_str, sizeof(pin_str));
     if (strlen(pin_str) != 4 || strspn(pin_str, "0123456789") != 4)
     {
         printf(RED "Invalid PIN. Must be exactly 4 digits.\n" RESET);
+
         return;
     }
 
@@ -324,14 +352,12 @@ void createAccount()
     hashPin(pin_str, a.salt, SALT_SIZE, a.pin_hash);
 
     printf(GREEN "Enter initial balance: " RESET);
-    if (scanf("%f", &a.balance) != 1)
-    {
+    if (scanf("%f", &a.balance) != 1) {
         printf(RED "Invalid balance input.\n" RESET);
         while ((ch = getchar()) != '\n' && ch != EOF);
         return;
     }
-    if (a.balance < 0.0f)
-    {
+    if (a.balance < 0.0f) {
         printf(RED "Initial balance cannot be negative.\n" RESET);
         return;
     }
@@ -340,8 +366,7 @@ void createAccount()
     a.locked = 0;
 
     FILE *fp = fopen("accounts.dat", "ab");
-    if (!fp)
-    {
+    if (!fp) {
         printf(RED "Error opening accounts file.\n" RESET);
         return;
     }
@@ -351,55 +376,61 @@ void createAccount()
     printf(GREEN "Account Created: %d, Name: %s, Balance: %.2f\n" RESET, a.acc_no, a.name, a.balance);
 }
 
+
+
 void deposit()
 {
     int acc_no;
     char pin_str[32];
+
+  
     float amount;
     int found = 0;
     int ch;
 
     printf(GREEN "Enter account number: " RESET);
-    if (scanf("%d", &acc_no) != 1)
-    {
+    if (scanf("%d", &acc_no) != 1) {
         printf(RED "Invalid input format.\n" RESET);
+
+        int ch;
+
         while ((ch = getchar()) != '\n' && ch != EOF);
         return;
     }
     printf(GREEN "Enter your PIN: " RESET);
+
     while ((ch = getchar()) != '\n' && ch != EOF); // flush newline
     getMaskedInput(pin_str, sizeof(pin_str));
 
     if (!authenticate(acc_no, pin_str))
     {
+
         printf(RED "Authentication failed. Wrong account or PIN.\n" RESET);
         return;
     }
     printf(GREEN "Enter amount to deposit: " RESET);
-    if (scanf("%f", &amount) != 1)
-    {
+    if (scanf("%f", &amount) != 1) {
         printf(RED "Invalid input format.\n" RESET);
+
+        int ch;
+
         while ((ch = getchar()) != '\n' && ch != EOF);
         return;
     }
-    if (amount <= 0.0f)
-    {
+    if (amount <= 0.0f) {
         printf(RED "Amount must be positive.\n" RESET);
         return;
     }
 
     FILE *fp = fopen("accounts.dat", "rb+");
-    if (!fp)
-    {
+    if (!fp) {
         printf(YELLOW "No accounts found.\n" RESET);
         return;
     }
 
     struct Account a;
-    while (fread(&a, sizeof(struct Account), 1, fp))
-    {
-        if (a.acc_no == acc_no)
-        {
+    while (fread(&a, sizeof(struct Account), 1, fp)) {
+        if (a.acc_no == acc_no) {
             found = 1;
             a.balance += amount;
             fseek(fp, -sizeof(struct Account), SEEK_CUR);
@@ -410,71 +441,73 @@ void deposit()
     }
     fclose(fp);
 
-    if (!found)
-    {
+    if (!found) {
         printf(RED "Account not found.\n" RESET);
     }
 }
+
 
 void withdraw()
 {
     int acc_no;
     char pin_str[32];
+
     float amount;
     int found = 0;
-    int ch;
+    
 
     printf(GREEN "Enter account number: " RESET);
-    if (scanf("%d", &acc_no) != 1)
-    {
+    if (scanf("%d", &acc_no) != 1) {
         printf(RED "Invalid input format.\n" RESET);
+
+        
+
         while ((ch = getchar()) != '\n' && ch != EOF);
         return;
     }
     printf(GREEN "Enter your PIN: " RESET);
+
+
     while ((ch = getchar()) != '\n' && ch != EOF);
     getMaskedInput(pin_str, sizeof(pin_str));
 
     if (!authenticate(acc_no, pin_str))
     {
+
         printf(RED "Authentication failed. Wrong account or PIN.\n" RESET);
         return;
     }
     printf(GREEN "Enter amount to withdraw: " RESET);
-    if (scanf("%f", &amount) != 1)
-    {
+    if (scanf("%f", &amount) != 1) {
         printf(RED "Invalid input format.\n" RESET);
-        while ((ch = getchar()) != '\n' && ch != EOF);
+
+      
+        int ch;
+      
+      while ((ch = getchar()) != '\n' && ch != EOF);
         return;
     }
-    if (amount <= 0.0f)
-    {
+    if (amount <= 0.0f) {
         printf(RED "Amount must be positive.\n" RESET);
         return;
     }
 
     FILE *fp = fopen("accounts.dat", "rb+");
-    if (!fp)
-    {
+    if (!fp) {
         printf(YELLOW "No accounts found.\n" RESET);
         return;
     }
 
     struct Account a;
-    while (fread(&a, sizeof(struct Account), 1, fp))
-    {
-        if (a.acc_no == acc_no)
-        {
+    while (fread(&a, sizeof(struct Account), 1, fp)) {
+        if (a.acc_no == acc_no) {
             found = 1;
-            if (a.balance >= amount)
-            {
+            if (a.balance >= amount) {
                 a.balance -= amount;
                 fseek(fp, -sizeof(struct Account), SEEK_CUR);
                 fwrite(&a, sizeof(struct Account), 1, fp);
                 printf(GREEN "Withdraw successful. New balance: %.2f\n" RESET, a.balance);
-            }
-            else
-            {
+            } else {
                 printf(RED "Insufficient balance.\n" RESET);
             }
             break;
@@ -482,17 +515,22 @@ void withdraw()
     }
     fclose(fp);
 
-    if (!found)
-    {
+    if (!found) {
         printf(RED "Account not found.\n" RESET);
     }
 }
 
+
+// ******** END OF TRANSFER FEATURE ********
+
+// ------- REMAINING FEATURES -------
+
+
 void viewAccounts()
 {
+
     FILE *fp = fopen("accounts.dat", "rb");
-    if (!fp)
-    {
+    if (!fp) {
         printf(YELLOW "No accounts found.\n" RESET);
         return;
     }
@@ -501,12 +539,11 @@ void viewAccounts()
     printf(BLUE "| Account No  | Name                      | Balance                      |\n" RESET);
     printf(BLUE "+-------------+---------------------------+------------------------------+\n" RESET);
     while (fread(&a, sizeof(struct Account), 1, fp))
-    {
         printf("| %-11d | %-25s | %-28.2f |\n", a.acc_no, a.name, a.balance);
-    }
     printf(BLUE "+-------------+---------------------------+------------------------------+\n" RESET);
     fclose(fp);
 }
+
 
 void searchAccount()
 {
@@ -514,20 +551,23 @@ void searchAccount()
     char pin_str[32];
     int ch;
 
+
     printf(GREEN "Enter account number to search: " RESET);
-    if (scanf("%d", &acc_no) != 1)
-    {
+    if (scanf("%d", &acc_no) != 1) {
         printf(RED "Invalid account number input.\n" RESET);
+
+        int ch;
+
         while ((ch = getchar()) != '\n' && ch != EOF);
         return;
     }
     printf(GREEN "Enter PIN for authentication: " RESET);
+
     while ((ch = getchar()) != '\n' && ch != EOF);
     getMaskedInput(pin_str, sizeof(pin_str));
 
     FILE *fp = fopen("accounts.dat", "rb");
-    if (!fp)
-    {
+    if (!fp) {
         printf(YELLOW "No accounts found.\n" RESET);
         return;
     }
@@ -551,32 +591,38 @@ void searchAccount()
                 printf(RED "PIN incorrect.\n" RESET);
                 break;
             }
+
         }
     }
     fclose(fp);
-    if (!found)
-    {
+    if (!found) {
         printf(RED "Account not found or PIN incorrect.\n" RESET);
     }
 }
+
 
 void updateAccountName()
 {
     int acc_no;
     char pin_str[32];
+
     char newName[100];
     int found = 0;
     int ch;
 
     printf(GREEN "Enter account number to update: " RESET);
-    if (scanf("%d", &acc_no) != 1)
-    {
+    if (scanf("%d", &acc_no) != 1) {
         printf(RED "Invalid account number input.\n" RESET);
+
+        int ch; 
+
+
         while ((ch = getchar()) != '\n' && ch != EOF);
         return;
     }
 
     printf(GREEN "Enter PIN for authentication: " RESET);
+
     while ((ch = getchar()) != '\n' && ch != EOF);
     getMaskedInput(pin_str, sizeof(pin_str));
 
@@ -584,21 +630,19 @@ void updateAccountName()
     while ((ch = getchar()) != '\n' && ch != EOF);
     if (!fgets(newName, sizeof(newName), stdin))
     {
+
         printf(RED "Invalid name input.\n" RESET);
         return;
     }
     size_t len = strlen(newName);
     if (len > 0 && newName[len - 1] == '\n')
         newName[len - 1] = '\0';
-    if (strlen(newName) == 0)
-    {
+    if (strlen(newName) == 0) {
         printf(RED "Name cannot be empty.\n" RESET);
         return;
     }
-
     FILE *fp = fopen("accounts.dat", "rb+");
-    if (!fp)
-    {
+    if (!fp) {
         printf(RED "No accounts found.\n" RESET);
         return;
     }
@@ -623,14 +667,15 @@ void updateAccountName()
                 printf(RED "Authentication failed. Wrong PIN.\n" RESET);
                 break;
             }
+
         }
     }
     fclose(fp);
-    if (!found)
-    {
+    if (!found) {
         printf(RED "Account not found or authentication failed.\n" RESET);
     }
 }
+
 
 void deleteAccount()
 {
@@ -639,11 +684,13 @@ void deleteAccount()
     int found = 0;
     int ch;
 
+
     printf(GREEN "Enter account number to delete: " RESET);
-    if (scanf("%d", &acc_no) != 1)
-    {
+    if (scanf("%d", &acc_no) != 1) {
         printf(RED "Invalid account number input.\n" RESET);
-        while ((ch = getchar()) != '\n' && ch != EOF);
+
+        int ch; 
+      while ((ch = getchar()) != '\n' && ch != EOF);
         return;
     }
 
@@ -651,9 +698,9 @@ void deleteAccount()
     while ((ch = getchar()) != '\n' && ch != EOF);
     getMaskedInput(pin_str, sizeof(pin_str));
 
+
     FILE *fp = fopen("accounts.dat", "rb");
-    if (!fp)
-    {
+    if (!fp) {
         printf(RED "No accounts found.\n" RESET);
         return;
     }
@@ -665,6 +712,7 @@ void deleteAccount()
         return;
     }
     struct Account a;
+
     while (fread(&a, sizeof(struct Account), 1, fp))
     {
         if (a.acc_no == acc_no)
@@ -686,10 +734,12 @@ void deleteAccount()
         else
         {
             fwrite(&a, sizeof(struct Account), 1, temp);
+
         }
     }
     fclose(fp);
     fclose(temp);
+
 
     if (found)
     {
@@ -739,6 +789,7 @@ void getMaskedInput(char *buffer, size_t size)
             buffer[idx++] = (char)ch;
             printf("*");
         }
+
     }
     buffer[idx] = '\0';
     printf("\n");
@@ -767,6 +818,7 @@ void getMaskedInput(char *buffer, size_t size)
 #endif
 }
 
+
 int main()
 {
     srand((unsigned int)time(NULL));
@@ -793,6 +845,7 @@ int main()
 
         switch (choice)
         {
+
             case 1:
                 createAccount();
                 break;
@@ -803,6 +856,7 @@ int main()
                 withdraw();
                 break;
             case 4:
+
                 viewAccounts();
                 break;
             case 5:
@@ -821,6 +875,7 @@ int main()
                 printf(RED "Invalid choice.\n" RESET);
         }
     }
+
 
     return 0;
 }
