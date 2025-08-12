@@ -239,9 +239,17 @@ void transferMoney() {
 
     printf("\n" GREEN "--- Money Transfer ---\n" RESET);
     printf("Enter Sender Account Number: ");
-    scanf("%d", &senderAcc);
+    if (scanf("%d", &senderAcc) != 1) {
+        printf(RED "Invalid input format.\n" RESET);
+        int ch;
+        while ((ch = getchar()) != '\n' && ch != EOF);
+        return;
+    }
     printf("Enter Sender PIN: ");
-    scanf("%d", &senderPin);
+    if (scanf("%d", &senderPin) != 1) {
+        printf(RED "Invalid PIN input.\n" RESET);
+        return;
+    }
 
     fp = fopen("accounts.dat", "rb+");
     if (!fp) {
@@ -264,7 +272,11 @@ void transferMoney() {
     }
 
     printf("Enter Receiver Account Number: ");
-    scanf("%d", &receiverAcc);
+    if (scanf("%d", &receiverAcc) != 1) {
+        printf(RED "Invalid input format.\n" RESET);
+        fclose(fp);
+        return;
+    }
 
     rewind(fp); // Start search again for receiver
 
@@ -283,7 +295,11 @@ void transferMoney() {
     }
 
     printf("Enter amount to transfer: ");
-    scanf("%f", &amount);
+    if (scanf("%f", &amount) != 1) {
+        printf(RED "Invalid input format.\n" RESET);
+        fclose(fp);
+        return;
+    }
 
     if (amount <= 0) {
         printf(RED "Invalid amount.\n" RESET);
@@ -305,8 +321,7 @@ void transferMoney() {
     fseek(fp, receiverPos, SEEK_SET);
     fwrite(&receiver, sizeof(struct Account), 1, fp);
 
-   printf(GREEN "Rs. %.2f successfully transferred from %s to %s\n" RESET, amount, sender.name, receiver.name);
-
+    printf(GREEN "Rs. %.2f successfully transferred from %s to %s\n" RESET, amount, sender.name, receiver.name);
 
     fclose(fp);
 }
@@ -370,7 +385,8 @@ void updateAccountName() {
     printf(GREEN "Enter account number to update: " RESET);
     if (scanf("%d", &acc_no) != 1) {
         printf(RED "Invalid account number input.\n" RESET);
-        int ch; while ((ch = getchar()) != '\n' && ch != EOF);
+        int ch; 
+        while ((ch = getchar()) != '\n' && ch != EOF);
         return;
     }
     printf(GREEN "Enter PIN for authentication: " RESET);
@@ -379,7 +395,8 @@ void updateAccountName() {
         return;
     }
     printf(GREEN "Enter new account holder name: " RESET);
-    int ch; while ((ch = getchar()) != '\n' && ch != EOF);
+    int ch; 
+    while ((ch = getchar()) != '\n' && ch != EOF);
 
     if (!fgets(newName, sizeof(newName), stdin)) {
         printf(RED "Invalid name input.\n" RESET);
@@ -419,7 +436,8 @@ void deleteAccount() {
     printf(GREEN "Enter account number to delete: " RESET);
     if (scanf("%d", &acc_no) != 1) {
         printf(RED "Invalid account number input.\n" RESET);
-        int ch; while ((ch = getchar()) != '\n' && ch != EOF);
+        int ch; 
+        while ((ch = getchar()) != '\n' && ch != EOF);
         return;
     }
     printf(GREEN "Enter PIN for authentication: " RESET);
