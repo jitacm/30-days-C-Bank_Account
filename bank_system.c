@@ -204,15 +204,14 @@ struct Account
     float balance;
     unsigned char pin_hash[HASH_SIZE];
     unsigned char salt[SALT_SIZE];
-    int failed_attempts; // present but unused in this instance
-    int locked; // present but unused in this instance
+    int failed_attempts;
+    int locked;
 };
 
 
 // ------- UTILITY FUNCTIONS -------
 int accountExists(int acc_no) {
 
-// Function prototypes
 void generateSalt(unsigned char *salt, size_t length);
 void hashPin(const char *pin, const unsigned char *salt, size_t salt_len, unsigned char *out_hash);
 int accountExists(int acc_no);
@@ -253,46 +252,60 @@ int accountExists(int acc_no)
 }
 
 
-int authenticate(int acc_no, int pin) {
-    FILE *fp = fopen("accounts.dat", "rb");
-    if (!fp) return 0;
-
-/* Authentication for this instance:
- * - Hashes pin_input with the stored salt and compares with stored hash.
- * - No incrementing failed attempts, no lockout.
- */
-int authenticate(int acc_no, const char *pin_input)
-{
-    FILE *fp = fopen("accounts.dat", "rb");
-    if (!fp)
+int authenticate(int acc_no, const char *pin_input) {
+    FILE *fp = fopen("accounts.dat", "rb+");
+    if (!fp) {
         return 0;
-
+    }
 
     struct Account a;
-    unsigned char input_hash[HASH_SIZE];
-    int result = 0;
+    int found = 0;
+    long pos = 0;
 
-    while (fread(&a, sizeof(struct Account), 1, fp)) {
-        if (a.acc_no == acc_no && a.pin == pin) {
-            result = 1;
-
-
-   while (fread(&a, sizeof(struct Account), 1, fp))
-{
-    if (a.acc_no == acc_no)
-    {
-        unsigned char input_hash[HASH_SIZE];
-        hashPin(pin_input, a.salt, SALT_SIZE, input_hash);
-        if (memcmp(input_hash, a.pin_hash, HASH_SIZE) == 0)
-        {
-            result = 1;
-        }
-
+    // Read the first record
+    while (fread(&a, sizeof(struct Account), 1, fp) == 1) {
+        if (a.acc_no == acc_no) {
+            found = 1;
+            pos = ftell(fp) - sizeof(struct Account); // Position of the beginning of this record
             break;
         }
     }
-    fclose(fp);
-    return result;
+
+    if (!found) {
+        fclose(fp);
+        return 0;
+    }
+
+    // Check if account is locked
+    if (a.locked) {
+        fclose(fp);
+        return 0;
+    }
+
+    // Compute hash for the provided PIN
+    unsigned char input_hash[HASH_SIZE];
+    hashPin(pin_input, a.salt, SALT_SIZE, input_hash);
+
+    if (memcmp(input_hash, a.pin_hash, HASH_SIZE) == 0) {
+        // Correct PIN: reset failed attempts
+        a.failed_attempts = 0;
+        fseek(fp, pos, SEEK_SET);
+        fwrite(&a, sizeof(struct Account), 1, fp);
+        fflush(fp);
+        fclose(fp);
+        return 1;
+    } else {
+        // Incorrect PIN
+        a.failed_attempts++;
+        if (a.failed_attempts >= 3) {
+            a.locked = 1;
+        }
+        fseek(fp, pos, SEEK_SET);
+        fwrite(&a, sizeof(struct Account), 1, fp);
+        fflush(fp);
+        fclose(fp);
+        return 0;
+    }
 }
 
 
@@ -310,8 +323,6 @@ void createAccount()
     if (scanf("%d", &a.acc_no) != 1) {
         printf(RED "Invalid account number input.\n" RESET);
 
-        int ch;
-
         while ((ch = getchar()) != '\n' && ch != EOF);
         return;
     }
@@ -321,7 +332,6 @@ void createAccount()
     }
     printf(GREEN "Enter account holder name: " RESET);
 
-    int ch;
     while ((ch = getchar()) != '\n' && ch != EOF); // Flush newline before fgets
     if (!fgets(a.name, sizeof(a.name), stdin)) {
 
@@ -392,8 +402,6 @@ void deposit()
     if (scanf("%d", &acc_no) != 1) {
         printf(RED "Invalid input format.\n" RESET);
 
-        int ch;
-
         while ((ch = getchar()) != '\n' && ch != EOF);
         return;
     }
@@ -411,8 +419,6 @@ void deposit()
     printf(GREEN "Enter amount to deposit: " RESET);
     if (scanf("%f", &amount) != 1) {
         printf(RED "Invalid input format.\n" RESET);
-
-        int ch;
 
         while ((ch = getchar()) != '\n' && ch != EOF);
         return;
@@ -556,7 +562,8 @@ void searchAccount()
     if (scanf("%d", &acc_no) != 1) {
         printf(RED "Invalid account number input.\n" RESET);
 
-        int ch;
+        int ch; 
+
 
         while ((ch = getchar()) != '\n' && ch != EOF);
         return;
