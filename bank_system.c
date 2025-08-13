@@ -3,7 +3,6 @@
 #include <string.h>
 #include <ctype.h>
 #include <time.h>
-
 #ifdef _WIN32
 #include <conio.h>
 #define CLEAR "cls"
@@ -15,6 +14,7 @@
 #define RED "\x1b[31m"
 #define GREEN "\x1b[32m"
 #define YELLOW "\x1b[33m"
+#define CYAN "\033[1;36m"
 #define BLUE "\x1b[34m"
 #define RESET "\x1b[0m"
 
@@ -39,6 +39,8 @@ typedef unsigned int WORD;  // 32-bit word
 #define EP1(x) (ROTRIGHT(x, 6) ^ ROTRIGHT(x, 11) ^ ROTRIGHT(x, 25))
 #define SIG0(x) (ROTRIGHT(x, 7) ^ ROTRIGHT(x, 18) ^ ((x) >> 3))
 #define SIG1(x) (ROTRIGHT(x, 17) ^ ROTRIGHT(x, 19) ^ ((x) >> 10))
+
+
 
 typedef struct
 {
@@ -211,8 +213,8 @@ struct Account
 
 // ------- UTILITY FUNCTIONS -------
 
-    // Function prototypes
-    void generateSalt(unsigned char *salt, size_t length);
+// Function prototypes
+void generateSalt(unsigned char *salt, size_t length);
 void hashPin(const char *pin, const unsigned char *salt, size_t salt_len, unsigned char *out_hash);
 int accountExists(int acc_no);
 int authenticate(int acc_no, const char *pin_input);
@@ -227,13 +229,33 @@ void printHex(const unsigned char *data, size_t len);
 void flush_stdin(void);
 void getMaskedInput(char *buffer, size_t size);
 
-void generateSalt(unsigned char *salt, size_t length) {
+
+void drawMenu()
+{
+    system("clear"); // Use "cls" for Windows
+    printf(BLUE "╔════════════════════════════════════════════════════════╗\n" RESET);
+    printf(BLUE "║" RESET "           " CYAN "🏦 CLI Banking System — Main Menu" RESET "           " BLUE "║\n" RESET);
+    printf(BLUE "╠════════════════════════════════════════════════════════╣\n" RESET);
+    printf(BLUE "║" RESET " 1. Create Account                               " BLUE "║\n" RESET);
+    printf(BLUE "║" RESET " 2. Deposit                                      " BLUE "║\n" RESET);
+    printf(BLUE "║" RESET " 3. Withdraw                                     " BLUE "║\n" RESET);
+    printf(BLUE "║" RESET " 4. View All Accounts                             " BLUE "║\n" RESET);
+    printf(BLUE "║" RESET " 5. Search Account                                " BLUE "║\n" RESET);
+    printf(BLUE "║" RESET " 6. Update Account Holder Name                    " BLUE "║\n" RESET);
+    printf(BLUE "║" RESET " 7. Delete Account                                " BLUE "║\n" RESET);
+    printf(BLUE "║" RESET " 8. Exit                                          " BLUE "║\n" RESET);
+    printf(BLUE "╚════════════════════════════════════════════════════════╝\n" RESET);
+}
+
+void generateSalt(unsigned char *salt, size_t length)
+{
     const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     size_t charset_size = sizeof(charset) - 1;
 
     srand((unsigned int)time(NULL)); // Seed the RNG
 
-    for (size_t i = 0; i < length - 1; i++) {
+    for (size_t i = 0; i < length - 1; i++)
+    {
         salt[i] = charset[rand() % charset_size];
     }
     salt[length - 1] = '\0'; // Null-terminate if you use it as a string
@@ -312,7 +334,6 @@ void createAccount()
     if (scanf("%d", &a.acc_no) != 1)
     {
         printf(RED "Invalid account number input.\n" RESET);
-
 
         while ((ch = getchar()) != '\n' && ch != EOF)
             ;
@@ -863,26 +884,17 @@ int main()
     while (1)
     {
         int choice;
-        printf("\n" BLUE "=== CLI Banking System (Instance 2 — Features 1+2) ===\n" RESET);
-        printf("1. Create Account\n");
-        printf("2. Deposit\n");
-        printf("3. Withdraw\n");
-        printf("4. View All Accounts\n");
-        printf("5. Search Account\n");
-        printf("6. Update Account Holder Name\n");
-        printf("7. Delete Account\n");
-        printf("8. Exit\n");
-        printf("Choose an option: ");
+        drawMenu();
+        printf(YELLOW "Choose an option: " RESET);
         if (scanf("%d", &choice) != 1)
         {
-            printf(RED "Invalid input.\n" RESET);
+            printf(RED "Invalid input! Please enter a number.\n" RESET);
             flush_stdin();
             continue;
         }
 
         switch (choice)
         {
-
         case 1:
             createAccount();
             break;
@@ -893,7 +905,6 @@ int main()
             withdraw();
             break;
         case 4:
-
             viewAccounts();
             break;
         case 5:
@@ -906,11 +917,15 @@ int main()
             deleteAccount();
             break;
         case 8:
-            printf(YELLOW "Exiting.\n" RESET);
+            printf(GREEN "Thank you for using CLI Banking System. Goodbye!\n" RESET);
             exit(0);
         default:
-            printf(RED "Invalid choice.\n" RESET);
+            printf(RED "Invalid choice. Please try again.\n" RESET);
         }
+
+        printf(YELLOW "\nPress Enter to return to menu..." RESET);
+        flush_stdin();
+        getchar();
     }
 
     return 0;
