@@ -49,11 +49,144 @@ typedef struct {
     WORD state[8];
 } SHA256_CTX;
 
-void sha256_transform(SHA256_CTX *ctx, const BYTE data[]);
-void sha256_init(SHA256_CTX *ctx);
-void sha256_update(SHA256_CTX *ctx, const BYTE data[], size_t len);
-void sha256_final(SHA256_CTX *ctx, BYTE hash[]);
-void sha256(const BYTE *data, size_t len, BYTE *out_hash);
+void sha256_transform(SHA256_CTX *ctx, const BYTE data[])
+{
+    WORD a,b,c,d,e,f,g,h,i,j,t1,t2,m[64];
+
+    static const WORD k[64] = {
+        0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,
+        0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+        0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,
+        0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+        0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,
+        0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+        0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,
+        0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+        0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,
+        0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+        0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,
+        0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+        0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,
+        0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+        0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,
+        0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+    };
+
+    for (i=0,j=0; i < 16; ++i, j += 4)
+        m[i] = (data[j] << 24) | (data[j+1] << 16) | (data[j+2] << 8) | (data[j+3]);
+    for ( ; i < 64; ++i)
+        m[i] = SIG1(m[i-2]) + m[i-7] + SIG0(m[i-15]) + m[i-16];
+
+    a = ctx->state[0];
+    b = ctx->state[1];
+    c = ctx->state[2];
+    d = ctx->state[3];
+    e = ctx->state[4];
+    f = ctx->state[5];
+    g = ctx->state[6];
+    h = ctx->state[7];
+
+    for (i=0; i < 64; ++i) {
+        t1 = h + EP1(e) + CH(e,f,g) + k[i] + m[i];
+        t2 = EP0(a) + MAJ(a,b,c);
+        h = g;
+        g = f;
+        f = e;
+        e = d + t1;
+        d = c;
+        c = b;
+        b = a;
+        a = t1 + t2;
+    }
+
+    ctx->state[0] += a;
+    ctx->state[1] += b;
+    ctx->state[2] += c;
+    ctx->state[3] += d;
+    ctx->state[4] += e;
+    ctx->state[5] += f;
+    ctx->state[6] += g;
+    ctx->state[7] += h;
+}
+
+void sha256_init(SHA256_CTX *ctx)
+{
+    ctx->datalen = 0;
+    ctx->bitlen = 0;
+    ctx->state[0] = 0x6a09e667;
+    ctx->state[1] = 0xbb67ae85;
+    ctx->state[2] = 0x3c6ef372;
+    ctx->state[3] = 0xa54ff53a;
+    ctx->state[4] = 0x510e527f;
+    ctx->state[5] = 0x9b05688c;
+    ctx->state[6] = 0x1f83d9ab;
+    ctx->state[7] = 0x5be0cd19;
+}
+
+void sha256_update(SHA256_CTX *ctx, const BYTE data[], size_t len)
+{
+    WORD i;
+
+    for (i=0; i < len; ++i) {
+        ctx->data[ctx->datalen] = data[i];
+        ctx->datalen++;
+        if (ctx->datalen == 64) {
+            sha256_transform(ctx, ctx->data);
+            ctx->bitlen += 512;
+            ctx->datalen = 0;
+        }
+    }
+}
+
+void sha256_final(SHA256_CTX *ctx, BYTE hash[])
+{
+    WORD i;
+
+    i = ctx->datalen;
+
+    if (ctx->datalen < 56) {
+        ctx->data[i++] = 0x80;
+        while (i < 56)
+            ctx->data[i++] = 0x00;
+    }
+    else {
+        ctx->data[i++] = 0x80;
+        while (i < 64)
+            ctx->data[i++] = 0x00;
+        sha256_transform(ctx, ctx->data);
+        memset(ctx->data, 0, 56);
+    }
+
+    ctx->bitlen += ctx->datalen * 8;
+    ctx->data[63] = ctx->bitlen;
+    ctx->data[62] = ctx->bitlen >> 8;
+    ctx->data[61] = ctx->bitlen >> 16;
+    ctx->data[60] = ctx->bitlen >> 24;
+    ctx->data[59] = ctx->bitlen >> 32;
+    ctx->data[58] = ctx->bitlen >> 40;
+    ctx->data[57] = ctx->bitlen >> 48;
+    ctx->data[56] = ctx->bitlen >> 56;
+    sha256_transform(ctx, ctx->data);
+
+    for (i=0; i < 4; ++i) {
+        hash[i]      = (ctx->state[0] >> (24 - i * 8)) & 0x000000ff;
+        hash[i + 4]  = (ctx->state[1] >> (24 - i * 8)) & 0x000000ff;
+        hash[i + 8]  = (ctx->state[2] >> (24 - i * 8)) & 0x000000ff;
+        hash[i + 12] = (ctx->state[3] >> (24 - i * 8)) & 0x000000ff;
+        hash[i + 16] = (ctx->state[4] >> (24 - i * 8)) & 0x000000ff;
+        hash[i + 20] = (ctx->state[5] >> (24 - i * 8)) & 0x000000ff;
+        hash[i + 24] = (ctx->state[6] >> (24 - i * 8)) & 0x000000ff;
+        hash[i + 28] = (ctx->state[7] >> (24 - i * 8)) & 0x000000ff;
+    }
+}
+
+void sha256(const BYTE *data, size_t len, BYTE *out_hash)
+{
+    SHA256_CTX ctx;
+    sha256_init(&ctx);
+    sha256_update(&ctx, data, len);
+    sha256_final(&ctx, out_hash);
+}
 
 // =========================================================================
 // NEW ENUMS AND STRUCTS FOR LOAN MANAGEMENT
@@ -62,7 +195,8 @@ void sha256(const BYTE *data, size_t len, BYTE *out_hash);
 typedef enum {
     PENDING,
     APPROVED,
-    REJECTED
+    REJECTED,
+    REPAID // New status for fully repaid loans
 } LoanStatus;
 
 struct Loan {
@@ -71,6 +205,7 @@ struct Loan {
     float amount;
     long timestamp; // When the loan was applied for
     LoanStatus status;
+    float amount_paid; // New field to track repayment
 };
 
 // =========================================================================
@@ -81,7 +216,8 @@ typedef enum {
     DEPOSIT,
     WITHDRAWAL,
     TRANSFER_OUT,
-    TRANSFER_IN
+    TRANSFER_IN,
+    LOAN_REPAYMENT // New transaction type
 } TransactionType;
 
 struct Transaction {
@@ -127,24 +263,24 @@ void userMenu();
 void adminMenu();
 void logTransaction(int acc_no, TransactionType type, float amount, int receiver_acc);
 void viewTransactionHistory();
-void applyForLoan(); // New function
-int isLoanPending(int acc_no); // New helper function
+void applyForLoan();
+int isLoanPending(int acc_no);
+void loanRepayment(); // New function
 
 // =========================================================================
-// NEW FUNCTION TO APPLY FOR A LOAN
+// NEW FUNCTION TO REPAY A LOAN
 // =========================================================================
 
 /**
- * @brief Allows a user to apply for a loan and saves the application to a file.
+ * @brief Allows a user to repay their outstanding loan amount.
  */
-void applyForLoan() {
+void loanRepayment() {
     int acc_no;
     char pin_str[32];
-    float loanAmount;
+    float repaymentAmount;
     int ch;
-    struct Account currentAccount;
 
-    printf(GREEN "\n--- Loan Application ---\n" RESET);
+    printf(GREEN "\n--- Loan Repayment ---\n" RESET);
     printf("Enter your account number: " RESET);
     if (scanf("%d", &acc_no) != 1) {
         printf(RED "Invalid input format.\n" RESET);
@@ -161,88 +297,100 @@ void applyForLoan() {
         return;
     }
 
-    // Check if the user already has a pending loan
-    if (isLoanPending(acc_no)) {
-        printf(YELLOW "You already have a pending loan application. Please wait for a response.\n" RESET);
+    // Find a pending or approved loan for this account
+    FILE *loans_fp = fopen(LOANS_FILE, "rb+");
+    if (!loans_fp) {
+        printf(YELLOW "No outstanding loans found.\n" RESET);
         return;
     }
 
-    // Get the account details to check eligibility
-    FILE *fp = fopen(ACCOUNTS_FILE, "rb");
-    if (fp) {
-        while (fread(&currentAccount, sizeof(struct Account), 1, fp)) {
-            if (currentAccount.acc_no == acc_no) {
-                break;
-            }
+    struct Loan loan;
+    int foundLoan = 0;
+    long loanPos = 0;
+
+    while (fread(&loan, sizeof(struct Loan), 1, loans_fp)) {
+        if (loan.acc_no == acc_no && (loan.status == PENDING || loan.status == APPROVED)) {
+            foundLoan = 1;
+            loanPos = ftell(loans_fp) - sizeof(struct Loan);
+            break;
         }
-        fclose(fp);
-    } else {
-        printf(RED "Error reading account data.\n" RESET);
-        return;
     }
-    
-    // Simple eligibility check: must have a positive balance
-    if (currentAccount.balance <= 0) {
-        printf(RED "You are not eligible for a loan with a non-positive balance. Your balance must be greater than 0.\n" RESET);
+
+    if (!foundLoan) {
+        printf(YELLOW "You have no outstanding loans to repay.\n" RESET);
+        fclose(loans_fp);
         return;
     }
 
-    printf("Enter desired loan amount: " RESET);
-    if (scanf("%f", &loanAmount) != 1) {
+    float outstandingBalance = loan.amount - loan.amount_paid;
+    printf(YELLOW "Outstanding loan balance: Rs. %.2f\n" RESET, outstandingBalance);
+    printf("Enter amount to repay: " RESET);
+    if (scanf("%f", &repaymentAmount) != 1) {
         printf(RED "Invalid input format.\n" RESET);
         flush_stdin();
+        fclose(loans_fp);
         return;
     }
 
-    if (loanAmount <= 0) {
-        printf(RED "Loan amount must be positive.\n" RESET);
+    if (repaymentAmount <= 0 || repaymentAmount > outstandingBalance) {
+        printf(RED "Invalid repayment amount. Must be positive and not exceed outstanding balance.\n" RESET);
+        fclose(loans_fp);
         return;
     }
 
-    // Create a new loan application record
-    FILE *loans_fp = fopen(LOANS_FILE, "ab");
-    if (!loans_fp) {
-        printf(RED "Error creating or opening loans file.\n" RESET);
+    // Check account balance for repayment
+    FILE *accounts_fp = fopen(ACCOUNTS_FILE, "rb+");
+    if (!accounts_fp) {
+        printf(RED "Error opening accounts file.\n" RESET);
+        fclose(loans_fp);
         return;
     }
 
-    struct Loan newLoan;
-    newLoan.loan_id = (int)time(NULL); // Simple way to generate a unique ID
-    newLoan.acc_no = acc_no;
-    newLoan.amount = loanAmount;
-    newLoan.timestamp = time(NULL);
-    newLoan.status = PENDING;
-
-    fwrite(&newLoan, sizeof(struct Loan), 1, loans_fp);
-    fclose(loans_fp);
-
-    printf(GREEN "Loan application for Rs. %.2f submitted successfully.\n" RESET, loanAmount);
-    printf(YELLOW "Please wait for an administrator to review your application.\n" RESET);
-}
-
-/**
- * @brief Checks if an account already has a pending loan application.
- * @param acc_no The account number to check.
- * @return 1 if a pending loan exists, 0 otherwise.
- */
-int isLoanPending(int acc_no) {
-    FILE *fp = fopen(LOANS_FILE, "rb");
-    if (!fp) {
-        return 0; // No file, so no pending loans
-    }
-    struct Loan loan;
-    while (fread(&loan, sizeof(struct Loan), 1, fp)) {
-        if (loan.acc_no == acc_no && loan.status == PENDING) {
-            fclose(fp);
-            return 1;
+    struct Account a;
+    long accountPos = 0;
+    while (fread(&a, sizeof(struct Account), 1, accounts_fp)) {
+        if (a.acc_no == acc_no) {
+            accountPos = ftell(accounts_fp) - sizeof(struct Account);
+            break;
         }
     }
-    fclose(fp);
-    return 0;
+
+    if (a.balance < repaymentAmount) {
+        printf(RED "Insufficient balance to make this repayment.\n" RESET);
+        fclose(accounts_fp);
+        fclose(loans_fp);
+        return;
+    }
+
+    // Process repayment
+    a.balance -= repaymentAmount;
+    loan.amount_paid += repaymentAmount;
+
+    if (loan.amount_paid >= loan.amount) {
+        loan.status = REPAID;
+        printf(GREEN "Loan successfully repaid in full!\n" RESET);
+    } else {
+        printf(GREEN "Repayment successful. Remaining balance: Rs. %.2f\n" RESET, loan.amount - loan.amount_paid);
+    }
+
+    // Update loan record
+    fseek(loans_fp, loanPos, SEEK_SET);
+    fwrite(&loan, sizeof(struct Loan), 1, loans_fp);
+    fflush(loans_fp);
+    fclose(loans_fp);
+
+    // Update account record
+    fseek(accounts_fp, accountPos, SEEK_SET);
+    fwrite(&a, sizeof(struct Account), 1, accounts_fp);
+    fflush(accounts_fp);
+    fclose(accounts_fp);
+
+    // Log the transaction
+    logTransaction(acc_no, LOAN_REPAYMENT, repaymentAmount, 0);
 }
 
 // =========================================================================
-// EXISTING FUNCTION IMPLEMENTATIONS (MODIFIED FOR NEW FEATURES)
+// EXISTING FUNCTION IMPLEMENTATIONS
 // =========================================================================
 
 void sha256_transform(SHA256_CTX *ctx, const BYTE data[])
@@ -944,6 +1092,10 @@ void viewTransactionHistory() {
                     printf(GREEN "TRANSFER IN  " RESET);
                     printf("| %-11.2f | From Account %d\n", t.amount, t.receiver_acc_no);
                     break;
+                case LOAN_REPAYMENT:
+                    printf(BLUE "LOAN REPAYMENT" RESET);
+                    printf("| %-11.2f | To Bank\n", t.amount);
+                    break;
             }
         }
     }
@@ -954,6 +1106,106 @@ void viewTransactionHistory() {
 
     printf(BLUE "===================================================================\n" RESET);
     fclose(fp);
+}
+
+void applyForLoan() {
+    int acc_no;
+    char pin_str[32];
+    float loanAmount;
+    int ch;
+    struct Account currentAccount;
+
+    printf(GREEN "\n--- Loan Application ---\n" RESET);
+    printf("Enter your account number: " RESET);
+    if (scanf("%d", &acc_no) != 1) {
+        printf(RED "Invalid input format.\n" RESET);
+        flush_stdin();
+        return;
+    }
+
+    printf("Enter your PIN: " RESET);
+    flush_stdin();
+    getMaskedInput(pin_str, sizeof(pin_str));
+
+    if (!authenticate(acc_no, pin_str)) {
+        printf(RED "Authentication failed. Wrong account or PIN.\n" RESET);
+        return;
+    }
+
+    // Check if the user already has a pending loan
+    if (isLoanPending(acc_no)) {
+        printf(YELLOW "You already have a pending loan application. Please wait for a response.\n" RESET);
+        return;
+    }
+
+    // Get the account details to check eligibility
+    FILE *fp = fopen(ACCOUNTS_FILE, "rb");
+    if (fp) {
+        while (fread(&currentAccount, sizeof(struct Account), 1, fp)) {
+            if (currentAccount.acc_no == acc_no) {
+                break;
+            }
+        }
+        fclose(fp);
+    } else {
+        printf(RED "Error reading account data.\n" RESET);
+        return;
+    }
+    
+    // Simple eligibility check: must have a positive balance
+    if (currentAccount.balance <= 0) {
+        printf(RED "You are not eligible for a loan with a non-positive balance. Your balance must be greater than 0.\n" RESET);
+        return;
+    }
+
+    printf("Enter desired loan amount: " RESET);
+    if (scanf("%f", &loanAmount) != 1) {
+        printf(RED "Invalid input format.\n" RESET);
+        flush_stdin();
+        return;
+    }
+
+    if (loanAmount <= 0) {
+        printf(RED "Loan amount must be positive.\n" RESET);
+        return;
+    }
+
+    // Create a new loan application record
+    FILE *loans_fp = fopen(LOANS_FILE, "ab");
+    if (!loans_fp) {
+        printf(RED "Error creating or opening loans file.\n" RESET);
+        return;
+    }
+
+    struct Loan newLoan;
+    newLoan.loan_id = (int)time(NULL); // Simple way to generate a unique ID
+    newLoan.acc_no = acc_no;
+    newLoan.amount = loanAmount;
+    newLoan.timestamp = time(NULL);
+    newLoan.status = PENDING;
+    newLoan.amount_paid = 0.0f; // Initialize amount paid to zero
+
+    fwrite(&newLoan, sizeof(struct Loan), 1, loans_fp);
+    fclose(loans_fp);
+
+    printf(GREEN "Loan application for Rs. %.2f submitted successfully.\n" RESET, loanAmount);
+    printf(YELLOW "Please wait for an administrator to review your application.\n" RESET);
+}
+
+int isLoanPending(int acc_no) {
+    FILE *fp = fopen(LOANS_FILE, "rb");
+    if (!fp) {
+        return 0; // No file, so no pending loans
+    }
+    struct Loan loan;
+    while (fread(&loan, sizeof(struct Loan), 1, fp)) {
+        if (loan.acc_no == acc_no && loan.status == PENDING) {
+            fclose(fp);
+            return 1;
+        }
+    }
+    fclose(fp);
+    return 0;
 }
 
 void searchAccount(int show_pin)
@@ -1269,8 +1521,9 @@ void userMenu() {
         printf(YELLOW "4. Transfer Money\n" RESET);
         printf(YELLOW "5. Generate Account Statement\n" RESET);
         printf(YELLOW "6. View Transaction History\n" RESET);
-        printf(YELLOW "7. Apply for Loan\n" RESET); // New menu option
-        printf(YELLOW "8. Exit to Main Menu\n" RESET);
+        printf(YELLOW "7. Apply for Loan\n" RESET);
+        printf(YELLOW "8. Loan Repayment\n" RESET);
+        printf(YELLOW "9. Exit to Main Menu\n" RESET);
         printf(GREEN "Enter your choice: " RESET);
 
         if (scanf("%d", &choice) != 1) {
@@ -1302,17 +1555,20 @@ void userMenu() {
                 applyForLoan();
                 break;
             case 8:
+                loanRepayment();
+                break;
+            case 9:
                 printf(GREEN "Exiting user menu...\n" RESET);
                 break;
             default:
                 printf(RED "Invalid choice!\n" RESET);
         }
-        if (choice != 8) {
+        if (choice != 9) {
             printf(YELLOW "\nPress Enter to continue..." RESET);
             flush_stdin();
             getchar();
         }
-    } while (choice != 8);
+    } while (choice != 9);
 }
 
 void adminMenu() {
