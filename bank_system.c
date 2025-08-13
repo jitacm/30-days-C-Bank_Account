@@ -404,7 +404,7 @@ int authenticateAdmin(const char *pin_input) {
     return memcmp(input_hash, stored_hash, HASH_SIZE) == 0;
 }
 
-// ------- CORE FEATURES -------
+
 
 void createAccount()
 {
