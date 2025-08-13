@@ -305,33 +305,47 @@ int accountExists(int acc_no)
  * - Hashes pin_input with the stored salt and compares with stored hash.
  * - No incrementing failed attempts, no lockout.
  */
-int authenticate(int acc_no, const char *pin_input)
-{
-
-    FILE *fp = fopen("accounts.dat", "rb");
-    if (!fp)
-        return 0;
-
+int authenticate(int acc_no, const char *entered_pin) {
     struct Account a;
-    unsigned char input_hash[HASH_SIZE];
-    int result = 0;
+    FILE *fp = fopen("accounts.dat", "rb+");
+    if (!fp) {
+        printf(RED "Error opening accounts file.\n" RESET);
+        return 0;
+    }
 
-    while (fread(&a, sizeof(struct Account), 1, fp))
-    {
-        if (a.acc_no == acc_no)
-        {
-            unsigned char input_hash[HASH_SIZE];
-            hashPin(pin_input, a.salt, SALT_SIZE, input_hash);
-            if (memcmp(input_hash, a.pin_hash, HASH_SIZE) == 0)
-            {
-                result = 1;
+    while (fread(&a, sizeof(struct Account), 1, fp) == 1) {
+        if (a.acc_no == acc_no) {
+            if (a.locked) {
+                printf(RED "Account is locked. Please contact the bank.\n" RESET);
+                fclose(fp);
+                return 0;
             }
 
-            break;
+            if (verifyPin(entered_pin, a.salt, a.pin_hash)) {
+                a.failed_attempts = 0;
+                fseek(fp, -sizeof(struct Account), SEEK_CUR);
+                fwrite(&a, sizeof(struct Account), 1, fp);
+                fclose(fp);
+                return 1; // success
+            } else {
+                a.failed_attempts++;
+                if (a.failed_attempts >= 3) {
+                    a.locked = 1;
+                    printf(RED "Account locked due to too many failed attempts.\n" RESET);
+                } else {
+                    printf(RED "Invalid PIN. %d attempts left.\n" RESET, 3 - a.failed_attempts);
+                }
+                fseek(fp, -sizeof(struct Account), SEEK_CUR);
+                fwrite(&a, sizeof(struct Account), 1, fp);
+                fclose(fp);
+                return 0;
+            }
         }
     }
+
     fclose(fp);
-    return result;
+    printf(RED "Account not found.\n" RESET);
+    return 0;
 }
 
 // ------- CORE FEATURES -------
