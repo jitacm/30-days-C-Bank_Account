@@ -817,7 +817,7 @@ void deleteAccount()
         }
     }
     fclose(fp);
-    fclose(temp);
+    if (temp) fclose(temp);
 
     if (found)
     {
@@ -938,6 +938,47 @@ void generateAccountStatement() {
     }
 }
 
+void unlockAccount() {
+    int acc_no;
+    int found = 0;
+    int ch;
+
+    printf(GREEN "Enter account number to unlock: " RESET);
+    if (scanf("%d", &acc_no) != 1) {
+        printf(RED "Invalid input format.\n" RESET);
+        while ((ch = getchar()) != '\n' && ch != EOF);
+        return;
+    }
+
+    FILE *fp = fopen("accounts.dat", "rb+");
+    if (!fp) {
+        printf(RED "No accounts found.\n" RESET);
+        return;
+    }
+
+    struct Account a;
+    while (fread(&a, sizeof(struct Account), 1, fp)) {
+        if (a.acc_no == acc_no) {
+            found = 1;
+            if (a.locked) {
+                a.locked = 0;
+                a.failed_attempts = 0;
+                fseek(fp, -sizeof(struct Account), SEEK_CUR);
+                fwrite(&a, sizeof(struct Account), 1, fp);
+                printf(GREEN "Account %d has been unlocked successfully.\n" RESET, acc_no);
+            } else {
+                printf(YELLOW "Account %d was not locked.\n" RESET, acc_no);
+            }
+            break;
+        }
+    }
+    fclose(fp);
+
+    if (!found) {
+        printf(RED "Account not found.\n" RESET);
+    }
+}
+
 void userMenu() {
     int choice;
     do {
@@ -996,7 +1037,8 @@ void adminMenu() {
         printf(YELLOW "2. Search Account by Number\n" RESET);
         printf(YELLOW "3. Update Account Holder Name\n" RESET);
         printf(YELLOW "4. Delete Account\n" RESET);
-        printf(YELLOW "5. Exit to Main Menu\n" RESET);
+        printf(YELLOW "5. Unlock User Account\n" RESET);
+        printf(YELLOW "6. Exit to Main Menu\n" RESET);
         printf(GREEN "Enter your choice: " RESET);
 
         if (scanf("%d", &choice) != 1) {
@@ -1019,17 +1061,20 @@ void adminMenu() {
                 deleteAccount();
                 break;
             case 5:
+                unlockAccount();
+                break;
+            case 6:
                 printf(GREEN "Exiting admin menu...\n" RESET);
                 break;
             default:
                 printf(RED "Invalid choice!\n" RESET);
         }
-        if (choice != 5) {
+        if (choice != 6) {
             printf(YELLOW "\nPress Enter to continue..." RESET);
             flush_stdin();
             getchar();
         }
-    } while (choice != 5);
+    } while (choice != 6);
 }
 
 int main()
