@@ -1,95 +1,21 @@
-# 🏦 Bank Account Management System (C CLI)
+# 🏦 Bank Account Management System (C CLI) — Secure Version
 
-A simple, secure CLI tool in C for creating, searching, updating, deleting, and managing bank accounts using file storage. Supports authentication and offers robust account operations right from your terminal.
+A simple, secure command-line tool in C for creating, searching, updating, deleting, and managing bank accounts using file storage. This enhanced version includes robust security features such as PIN hashing, account lockout, masked PIN input, and admin-level authentication.
+
+---
 
 ## 🚀 Installation
 
-**Requirements:**
-- C Compiler (like GCC)
-- Works on Windows, Linux, and macOS
-- Recommended: GCC version 5+ (any C99-compliant compiler should work)
+### Requirements
 
-**Install & Run:**
-1. Clone this repository:
-    ```bash
-    git clone https://github.com/your-username/your-repo.git
-    cd your-repo
-    ```
+- C Compiler (GCC recommended, C99 compliant)
+- Works on Windows, Linux, and macOS terminals
 
-2. Build:
-    ```bash
-    gcc bank_system.c -o bank_system
-    ```
-
-3. Run:
-    ```bash
-    ./bank_system    # For Linux/macOS
-    bank_system.exe  # For Windows
-    ```
-
-## 📦 About the Project
-
-This is a command-line program that lets you:
-- Open, manage, and delete bank accounts.
-- Deposit and withdraw funds securely.
-- Search for accounts with authentication.
-- Update account holder names.
-- Review all stored account information simply.
-
-**How It Works:**
-- Account data is stored in a binary file (`accounts.dat`).
-- PIN authentication is used for important actions.
-- The interface is textual (no GUI), but colorful and user-friendly.
-
-## 🛠️ Features
-
-- Create new accounts (set account number, full name, PIN, starting balance)
-- Deposit to an account (PIN required)
-- Withdraw from an account (PIN required)
-- Search for an account (number & PIN)
-- Update account holder’s name (PIN required)
-- Delete an account (PIN required)
-- View all accounts easily
-- Input validation and helpful error feedback
-- Cross-platform—works in any terminal
-
-## 🎯 Menu Options & Actions
-
-When you run the program, you’ll see:
-
-1. Create Account  
-   Enter an account number, full name, choose a 4-digit PIN, and enter the starting balance.
-
-2. Deposit  
-   Enter an account number, correct PIN, and deposit amount.
-
-3. Withdraw  
-   Enter an account number, PIN, and withdrawal amount.
-
-4. View Accounts  
-   Shows all account numbers, account holder names, and balances.
-
-5. Search Account  
-   Enter an account number and PIN to see the details of one account.
-
-6. Update Account Holder Name  
-   Enter an account number, PIN, and the new name to update your info.
-
-7. Delete Account  
-   Enter an account number and PIN to securely remove an account.
-
-8. Exit  
-   Close the program.
-
-- Enter the menu option number (ex: `1`) and follow prompts.
-- PIN codes (4-digit) are required for sensitive actions.
-- Full names (including spaces) are supported.
-
-## 💻 Common Commands
+### Build & Run
 
 ```bash
 # Compile the program (Linux/macOS)
-gcc bank_system.c -o bank_system
+gcc bank_system.c -o bank_system -lm
 
 # Run the program (Linux/macOS)
 ./bank_system
@@ -98,21 +24,135 @@ gcc bank_system.c -o bank_system
 bank_system.exe
 ```
 
+---
+
+## 📦 About the Project
+
+This CLI program allows you to:
+
+- Open, manage, and delete bank accounts
+- Deposit and withdraw funds securely
+- Search for accounts with authentication
+- Update account holder names
+- View all stored account information
+- **New:** Secure PIN handling and admin controls
+
+---
+
+## 🔐 Security Features
+
+### 1. PIN Hashing with SHA-256 and Salt
+
+- PINs are never stored in plaintext.
+- Each PIN is hashed with a unique random salt per account.
+- Protects against data breaches and offline attacks.
+
+### 2. Masked PIN Input
+
+- PINs are entered invisibly (masked with `*`) to prevent shoulder surfing.
+- Works cross-platform (Windows and Unix-like systems).
+
+### 3. Account Lockout
+
+- After 3 failed PIN attempts, accounts are locked.
+- Locked accounts cannot be accessed until unlocked by an admin.
+- Prevents brute force PIN guessing.
+
+### 4. Admin-Level Authentication
+
+- Critical actions (update name, delete account) require admin PIN.
+- Admin PIN is securely stored hashed with salt.
+- Admin PIN setup is prompted on first run.
+- Admin authentication adds an extra security layer.
+
+---
+
+## 🎯 Menu Options & Actions
+
+- **Create Account**  
+  Enter account number, full name, set a 4-digit PIN (masked), and initial balance.
+
+- **Deposit**  
+  Enter account number, PIN (masked), and deposit amount.
+
+- **Withdraw**  
+  Enter account number, PIN (masked), and withdrawal amount.
+
+- **View Accounts**  
+  Displays all accounts with numbers, names, and balances.
+
+- **Search Account**  
+  Enter account number and PIN (masked) to view details.
+
+- **Update Account Holder Name**  
+  Requires user PIN and admin PIN authentication.
+
+- **Delete Account**  
+  Requires user PIN and admin PIN authentication.
+
+- **Exit**  
+  Close the program.
+
+---
+
+## ⚙️ How to Use Admin Features
+
+- On first run, you will be prompted to set an admin PIN.
+- Admin PIN is required for updating account names and deleting accounts.
+- Locked accounts can be unlocked by updating the account name (admin action).
+- Admin PIN is entered masked for security.
+
+---
+
+## 💻 Common Commands
+
+```bash
+# Compile the program (Linux/macOS)
+gcc bank_system.c -o bank_system -lm
+
+# Run the program (Linux/macOS)
+./bank_system
+
+# On Windows, after compiling:
+bank_system.exe
+```
+
+---
+
 ## 🧩 Technologies Used
 
 - C Language (C99)
 - File I/O (binary storage)
+- SHA-256 hashing (internal implementation)
 - Terminal color feedback (ANSI codes)
-- Runs directly in your command line shell
+- Cross-platform masked input handling
+
+---
+
+## 🗑️ About `tempCodeRunnerFile.c`
+
+This file appears to be a temporary or backup file generated by some IDEs or code runners. It duplicates the main program code and is not required for the project to function.
+
+**Recommendation:**  
+You should delete `tempCodeRunnerFile.c` from the repository to keep the project clean and avoid confusion.
+
+---
 
 ## 🤝 Contributing
 
-- Fork the repo, make your changes, and open a pull request!
-- Please keep code clean and well-documented to help new users.
+Fork the repo, make your changes, and open a pull request!  
+Please keep code clean and well-documented to help new users.
+
+---
 
 ## ❓ FAQ
 
-- **Q: What if I forget my PIN?**  
-  A: For your security, PINs cannot be recovered.
-- **Q: Will this work on any operating system?**  
-  A: Yes! The code is tested on Windows, Linux, and Mac terminals and auto-detects the best way to clear your screen and show color feedback.
+**Q: What if I forget my PIN?**  
+A: For your security, PINs cannot be recovered. Contact admin for account unlocking or reset.
+
+**Q: Will this work on any operating system?**  
+A: Yes! The code is tested on Windows, Linux, and macOS terminals and auto-detects the best way to clear your screen and show color feedback.
+
+---
+
+Thank you for using the Bank Account Management System!
