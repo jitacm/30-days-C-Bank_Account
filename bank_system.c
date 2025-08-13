@@ -127,8 +127,8 @@ void userMenu();
 void adminMenu();
 void logTransaction(int acc_no, TransactionType type, float amount, int receiver_acc);
 void viewTransactionHistory();
-void applyForLoan(); // New function
-int isLoanPending(int acc_no); // New helper function
+void applyForLoan();
+int isLoanPending(int acc_no);
 
 // =========================================================================
 // NEW FUNCTION TO APPLY FOR A LOAN
@@ -1269,7 +1269,7 @@ void userMenu() {
         printf(YELLOW "4. Transfer Money\n" RESET);
         printf(YELLOW "5. Generate Account Statement\n" RESET);
         printf(YELLOW "6. View Transaction History\n" RESET);
-        printf(YELLOW "7. Apply for Loan\n" RESET); // New menu option
+        printf(YELLOW "7. Apply for Loan\n" RESET);
         printf(YELLOW "8. Exit to Main Menu\n" RESET);
         printf(GREEN "Enter your choice: " RESET);
 
@@ -1421,4 +1421,3 @@ int main()
 
     return 0;
 }
-
