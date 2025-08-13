@@ -27,8 +27,8 @@
 #define ADMIN_MAGIC_LEN 6
 
 // --- SHA-256 Implementation (public domain) ---
-typedef unsigned char BYTE;             // 8-bit byte
-typedef unsigned int  WORD;              // 32-bit word
+typedef unsigned char BYTE;         // 8-bit byte
+typedef unsigned int  WORD;         // 32-bit word
 
 #define ROTLEFT(a,b) (((a) << (b)) | ((a) >> (32-(b))))
 #define ROTRIGHT(a,b) (((a) >> (b)) | ((a) << (32-(b))))
@@ -50,20 +50,6 @@ void sha256_transform(SHA256_CTX *ctx, const BYTE data[])
 {
     WORD a,b,c,d,e,f,g,h,i,j,t1,t2,m[64];
 
-    for (i=0,j=0; i < 16; ++i, j += 4)
-        m[i] = (data[j] << 24) | (data[j+1] << 16) | (data[j+2] << 8) | (data[j+3]);
-    for ( ; i < 64; ++i)
-        m[i] = SIG1(m[i-2]) + m[i-7] + SIG0(m[i-15]) + m[i-16];
-
-    a = ctx->state[0];
-    b = ctx->state[1];
-    c = ctx->state[2];
-    d = ctx->state[3];
-    e = ctx->state[4];
-    f = ctx->state[5];
-    g = ctx->state[6];
-    h = ctx->state[7];
-
     static const WORD k[64] = {
         0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,
         0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
@@ -82,6 +68,20 @@ void sha256_transform(SHA256_CTX *ctx, const BYTE data[])
         0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,
         0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
     };
+
+    for (i=0,j=0; i < 16; ++i, j += 4)
+        m[i] = (data[j] << 24) | (data[j+1] << 16) | (data[j+2] << 8) | (data[j+3]);
+    for ( ; i < 64; ++i)
+        m[i] = SIG1(m[i-2]) + m[i-7] + SIG0(m[i-15]) + m[i-16];
+
+    a = ctx->state[0];
+    b = ctx->state[1];
+    c = ctx->state[2];
+    d = ctx->state[3];
+    e = ctx->state[4];
+    f = ctx->state[5];
+    g = ctx->state[6];
+    h = ctx->state[7];
 
     for (i=0; i < 64; ++i) {
         t1 = h + EP1(e) + CH(e,f,g) + k[i] + m[i];
@@ -216,8 +216,9 @@ int authenticateAdmin(const char *pin_input);
 void createAccount();
 void deposit();
 void withdraw();
+void transferMoney();
 void viewAccounts();
-void searchAccount();
+void searchAccount(int show_pin); // Modified function signature
 void updateAccountName();
 void deleteAccount();
 void printHex(const unsigned char *data, size_t len);
@@ -229,6 +230,14 @@ int loadAdminCredentials(unsigned char *salt, unsigned char *hash);
 int saveAdminCredentials(const unsigned char *salt, const unsigned char *hash);
 int setAdminPinInteractive(void);
 int adminInitIfNeeded(void);
+
+// New Feature: User-Friendly Account Statement
+void generateAccountStatement();
+
+// New Menu functions
+void userMenu();
+void adminMenu();
+
 
 void generateSalt(unsigned char *salt, size_t length) {
     for (size_t i = 0; i < length; i++) {
@@ -301,6 +310,7 @@ int authenticate(int acc_no, const char *pin_input) {
         a.failed_attempts++;
         if (a.failed_attempts >= 3) {
             a.locked = 1;
+            printf(RED "\nToo many failed attempts. Account has been locked.\n" RESET);
         }
         fseek(fp, pos, SEEK_SET);
         fwrite(&a, sizeof(struct Account), 1, fp);
@@ -311,7 +321,6 @@ int authenticate(int acc_no, const char *pin_input) {
 }
 
 // --- Admin credentials (secure storage) ---
-
 int loadAdminCredentials(unsigned char *salt, unsigned char *hash) {
     FILE *fp = fopen(ADMIN_FILE, "rb");
     if (!fp) return 0;
@@ -586,6 +595,110 @@ void withdraw()
     }
 }
 
+void transferMoney() {
+    FILE *fp;
+    struct Account sender, receiver;
+    int senderAcc, receiverAcc;
+    char senderPin_str[32];
+    float amount;
+    int foundSender = 0, foundReceiver = 0;
+    long senderPos, receiverPos;
+
+    printf("\n" GREEN "--- Money Transfer ---\n" RESET);
+    printf("Enter Sender Account Number: ");
+    if (scanf("%d", &senderAcc) != 1) {
+        printf(RED "Invalid input format.\n" RESET);
+        int ch;
+        while ((ch = getchar()) != '\n' && ch != EOF);
+        return;
+    }
+    printf("Enter Sender PIN: ");
+    int ch;
+    while ((ch = getchar()) != '\n' && ch != EOF); // Flush newline before masked input
+    getMaskedInput(senderPin_str, sizeof(senderPin_str));
+
+    // Authenticate sender
+    if (!authenticate(senderAcc, senderPin_str)) {
+        printf(RED "Authentication failed. Sender account not found or invalid PIN.\n" RESET);
+        return;
+    }
+
+    fp = fopen("accounts.dat", "rb+");
+    if (!fp) {
+        printf(YELLOW "No accounts found.\n" RESET);
+        return;
+    }
+
+    // Find sender to get their details
+    rewind(fp);
+    while (fread(&sender, sizeof(struct Account), 1, fp) == 1) {
+        if (sender.acc_no == senderAcc) {
+            foundSender = 1;
+            senderPos = ftell(fp) - sizeof(struct Account);
+            break;
+        }
+    }
+
+    printf("Enter Receiver Account Number: ");
+    if (scanf("%d", &receiverAcc) != 1) {
+        printf(RED "Invalid input format.\n" RESET);
+        fclose(fp);
+        return;
+    }
+    if (senderAcc == receiverAcc) {
+        printf(RED "Cannot transfer money to the same account.\n" RESET);
+        fclose(fp);
+        return;
+    }
+
+    rewind(fp); // Start search again for receiver
+    
+    // Find receiver
+    while (fread(&receiver, sizeof(struct Account), 1, fp) == 1) {
+        if (receiver.acc_no == receiverAcc) {
+            foundReceiver = 1;
+            receiverPos = ftell(fp) - sizeof(struct Account);
+            break;
+        }
+    }
+    if (!foundReceiver) {
+        printf(RED "Receiver account not found.\n" RESET);
+        fclose(fp);
+        return;
+    }
+
+    printf("Enter amount to transfer: ");
+    if (scanf("%f", &amount) != 1) {
+        printf(RED "Invalid input format.\n" RESET);
+        fclose(fp);
+        return;
+    }
+
+    if (amount <= 0) {
+        printf(RED "Invalid amount.\n" RESET);
+        fclose(fp);
+        return;
+    }
+
+    if (sender.balance < amount) {
+        printf(RED "Insufficient balance in sender's account.\n" RESET);
+        fclose(fp);
+        return;
+    }
+
+    sender.balance -= amount;
+    fseek(fp, senderPos, SEEK_SET);
+    fwrite(&sender, sizeof(struct Account), 1, fp);
+
+    receiver.balance += amount;
+    fseek(fp, receiverPos, SEEK_SET);
+    fwrite(&receiver, sizeof(struct Account), 1, fp);
+
+    printf(GREEN "Rs. %.2f successfully transferred from %s to %s\n" RESET, amount, sender.name, receiver.name);
+
+    fclose(fp);
+}
+
 void viewAccounts()
 {
     FILE *fp = fopen("accounts.dat", "rb");
@@ -603,23 +716,19 @@ void viewAccounts()
     fclose(fp);
 }
 
-void searchAccount()
+// searchAccount now does not require a PIN since it's an admin function
+void searchAccount(int show_pin)
 {
     int acc_no;
-    char pin_str[32];
     int ch;
-
+    
     printf(GREEN "Enter account number to search: " RESET);
     if (scanf("%d", &acc_no) != 1) {
         printf(RED "Invalid account number input.\n" RESET);
         while ((ch = getchar()) != '\n' && ch != EOF);
         return;
     }
-    printf(GREEN "Enter PIN for authentication: " RESET);
-
-    while ((ch = getchar()) != '\n' && ch != EOF);
-    getMaskedInput(pin_str, sizeof(pin_str));
-
+    
     FILE *fp = fopen("accounts.dat", "rb");
     if (!fp) {
         printf(YELLOW "No accounts found.\n" RESET);
@@ -631,45 +740,31 @@ void searchAccount()
     {
         if (a.acc_no == acc_no)
         {
-            unsigned char input_hash[HASH_SIZE];
-            hashPin(pin_str, a.salt, SALT_SIZE, input_hash);
-            if (memcmp(input_hash, a.pin_hash, HASH_SIZE) == 0)
-            {
-                found = 1;
-                printf(BLUE "\nAccount Details:\n" RESET);
-                printf(YELLOW "Account No: %d\nName: %s\nBalance: %.2f\n" RESET, a.acc_no, a.name, a.balance);
-                break;
+            found = 1;
+            printf(BLUE "\nAccount Details:\n" RESET);
+            printf(YELLOW "Account No: %d\n" RESET, a.acc_no);
+            printf(YELLOW "Name: %s\n" RESET, a.name);
+            printf(YELLOW "Balance: %.2f\n" RESET, a.balance);
+            if (show_pin) {
+                 printf(YELLOW "Pin Hash: " RESET);
+                 printHex(a.pin_hash, HASH_SIZE);
             }
-            else
-            {
-                printf(RED "PIN incorrect.\n" RESET);
-                break;
-            }
+            break;
         }
     }
     fclose(fp);
     if (!found) {
-        printf(RED "Account not found or PIN incorrect.\n" RESET);
+        printf(RED "Account not found.\n" RESET);
     }
 }
 
+// updateAccountName now does not require an internal admin check
 void updateAccountName()
 {
     int acc_no;
-    char admin_pin[32];
     char newName[100];
     int found = 0;
     int ch;
-
-    printf(YELLOW "*** ADMIN AUTHENTICATION REQUIRED ***\n" RESET);
-    printf(GREEN "Enter admin PIN: " RESET);
-    while ((ch = getchar()) != '\n' && ch != EOF); // ensure clean buffer
-    getMaskedInput(admin_pin, sizeof(admin_pin));
-    
-    if (!authenticateAdmin(admin_pin)) {
-        printf(RED "Invalid admin PIN. Access denied.\n" RESET);
-        return;
-    }
 
     printf(GREEN "Enter account number to update: " RESET);
     if (scanf("%d", &acc_no) != 1) {
@@ -720,22 +815,12 @@ void updateAccountName()
     }
 }
 
+// deleteAccount now does not require an internal admin check
 void deleteAccount()
 {
     int acc_no;
-    char admin_pin[32];
     int found = 0;
     int ch;
-
-    printf(YELLOW "*** ADMIN AUTHENTICATION REQUIRED ***\n" RESET);
-    printf(GREEN "Enter admin PIN: " RESET);
-    while ((ch = getchar()) != '\n' && ch != EOF); // ensure clean buffer
-    getMaskedInput(admin_pin, sizeof(admin_pin));
-    
-    if (!authenticateAdmin(admin_pin)) {
-        printf(RED "Invalid admin PIN. Access denied.\n" RESET);
-        return;
-    }
 
     printf(GREEN "Enter account number to delete: " RESET);
     if (scanf("%d", &acc_no) != 1) {
@@ -766,7 +851,7 @@ void deleteAccount()
             found = 1;
             // Skip writing this account => it will be deleted
             printf(YELLOW "Deleting account: %d, Name: %s, Balance: %.2f\n" RESET, 
-                   a.acc_no, a.name, a.balance);
+                       a.acc_no, a.name, a.balance);
             continue;
         }
         else
@@ -852,37 +937,76 @@ void getMaskedInput(char *buffer, size_t size)
 #endif
 }
 
-int main()
-{
-    srand((unsigned int)time(NULL));
-
-    if (!adminInitIfNeeded()) {
-        printf(RED "Failed to initialize admin credentials. Exiting.\n" RESET);
-        return 1;
+void generateAccountStatement() {
+    int acc_no;
+    char pin_str[32];
+    int found = 0;
+    int ch;
+    
+    printf(GREEN "Enter account number for statement: " RESET);
+    if (scanf("%d", &acc_no) != 1) {
+        printf(RED "Invalid account number input.\n" RESET);
+        while ((ch = getchar()) != '\n' && ch != EOF);
+        return;
     }
+    
+    printf(GREEN "Enter PIN for authentication: " RESET);
+    while ((ch = getchar()) != '\n' && ch != EOF);
+    getMaskedInput(pin_str, sizeof(pin_str));
+    
+    if (!authenticate(acc_no, pin_str)) {
+        printf(RED "Authentication failed. Account not found or PIN incorrect.\n" RESET);
+        return;
+    }
+    
+    FILE *fp = fopen("accounts.dat", "rb");
+    if (!fp) {
+        printf(YELLOW "No accounts found.\n" RESET);
+        return;
+    }
+    
+    struct Account a;
+    while (fread(&a, sizeof(struct Account), 1, fp)) {
+        if (a.acc_no == acc_no) {
+            found = 1;
+            printf(BLUE "\n============================================\n" RESET);
+            printf(BLUE "         BANK ACCOUNT STATEMENT             \n" RESET);
+            printf(BLUE "============================================\n" RESET);
+            printf(YELLOW "Account Number:  %d\n" RESET, a.acc_no);
+            printf(YELLOW "Account Holder:  %s\n" RESET, a.name);
+            printf(YELLOW "Current Balance: %.2f\n" RESET, a.balance);
+            printf(BLUE "============================================\n" RESET);
+            break;
+        }
+    }
+    fclose(fp);
+    
+    if (!found) {
+        printf(RED "Account not found or PIN incorrect.\n" RESET);
+    }
+}
 
-    while (1)
-    {
-        int choice;
-        printf("\n" BLUE "=== CLI Banking System (Instance 2 — Features 1+2) ===\n" RESET);
-        printf("1. Create Account\n");
-        printf("2. Deposit\n");
-        printf("3. Withdraw\n");
-        printf("4. View All Accounts\n");
-        printf("5. Search Account\n");
-        printf("6. Update Account Holder Name " YELLOW "(Admin Only)\n" RESET);
-        printf("7. Delete Account " YELLOW "(Admin Only)\n" RESET);
-        printf("8. Exit\n");
-        printf("Choose an option: ");
-        if (scanf("%d", &choice) != 1)
-        {
-            printf(RED "Invalid input.\n" RESET);
+// ------- NEW MENU FUNCTIONS -------
+void userMenu() {
+    int choice;
+    do {
+        system(CLEAR);
+        printf(BLUE "\n=== User Menu ===\n" RESET);
+        printf(YELLOW "1. Create Account\n" RESET);
+        printf(YELLOW "2. Deposit\n" RESET);
+        printf(YELLOW "3. Withdraw\n" RESET);
+        printf(YELLOW "4. Transfer Money\n" RESET);
+        printf(YELLOW "5. Generate Account Statement\n" RESET); 
+        printf(YELLOW "6. Exit to Main Menu\n" RESET);
+        printf(GREEN "Enter your choice: " RESET);
+
+        if (scanf("%d", &choice) != 1) {
+            printf(RED "Invalid input!\n" RESET);
             flush_stdin();
             continue;
         }
 
-        switch (choice)
-        {
+        switch (choice) {
             case 1:
                 createAccount();
                 break;
@@ -893,24 +1017,125 @@ int main()
                 withdraw();
                 break;
             case 4:
-                viewAccounts();
+                transferMoney();
                 break;
             case 5:
-                searchAccount();
+                generateAccountStatement();
                 break;
             case 6:
+                printf(GREEN "Exiting user menu...\n" RESET);
+                break;
+            default:
+                printf(RED "Invalid choice!\n" RESET);
+        }
+        if (choice != 6) {
+            printf(YELLOW "\nPress Enter to continue..." RESET);
+            flush_stdin();
+            getchar();
+        }
+    } while (choice != 6);
+}
+
+void adminMenu() {
+    int choice;
+    do {
+        system(CLEAR);
+        printf(BLUE "\n=== Admin Menu ===\n" RESET);
+        printf(YELLOW "1. View All Accounts\n" RESET);
+        printf(YELLOW "2. Search Account by Number\n" RESET);
+        printf(YELLOW "3. Update Account Holder Name\n" RESET);
+        printf(YELLOW "4. Delete Account\n" RESET);
+        printf(YELLOW "5. Exit to Main Menu\n" RESET);
+        printf(GREEN "Enter your choice: " RESET);
+
+        if (scanf("%d", &choice) != 1) {
+            printf(RED "Invalid input!\n" RESET);
+            flush_stdin();
+            continue;
+        }
+
+        switch (choice) {
+            case 1:
+                viewAccounts();
+                break;
+            case 2:
+                searchAccount(0); // Admin search, no PIN needed. '0' for show_pin
+                break;
+            case 3:
                 updateAccountName();
                 break;
-            case 7:
+            case 4:
                 deleteAccount();
                 break;
-            case 8:
-                printf(YELLOW "Exiting.\n" RESET);
-                exit(0);
+            case 5:
+                printf(GREEN "Exiting admin menu...\n" RESET);
+                break;
             default:
-                printf(RED "Invalid choice.\n" RESET);
+                printf(RED "Invalid choice!\n" RESET);
         }
+        if (choice != 5) {
+            printf(YELLOW "\nPress Enter to continue..." RESET);
+            flush_stdin();
+            getchar();
+        }
+    } while (choice != 5);
+}
+
+// ------- MAIN MENU -------
+int main()
+{
+    srand((unsigned int)time(NULL));
+
+    if (!adminInitIfNeeded()) {
+        printf(RED "Failed to initialize admin credentials. Exiting.\n" RESET);
+        return 1;
     }
+
+    int choice;
+    char admin_pin[32];
+    
+    do {
+        system(CLEAR);
+        printf(BLUE "\n=== Bank Account Management ===\n" RESET);
+        printf(YELLOW "1. User Login\n" RESET);
+        printf(YELLOW "2. Admin Login\n" RESET);
+        printf(YELLOW "3. Exit\n" RESET);
+        printf(GREEN "Enter your choice: " RESET);
+
+        if (scanf("%d", &choice) != 1) {
+            printf(RED "Invalid input!\n" RESET);
+            flush_stdin();
+            continue;
+        }
+
+        switch (choice) {
+            case 1:
+                userMenu();
+                break;
+            case 2:
+                printf(GREEN "Enter Admin PIN: " RESET);
+                flush_stdin();
+                getMaskedInput(admin_pin, sizeof(admin_pin));
+                
+                if (authenticateAdmin(admin_pin)) {
+                    printf(GREEN "Admin login successful.\n" RESET);
+                    adminMenu();
+                } else {
+                    printf(RED "Incorrect passcode. Access denied.\n" RESET);
+                }
+                break;
+            case 3:
+                printf(GREEN "Exiting program...\n" RESET);
+                break;
+            default:
+                printf(RED "Invalid choice!\n" RESET);
+        }
+        if (choice != 3) {
+            printf(YELLOW "\nPress Enter to continue..." RESET);
+            flush_stdin();
+            getchar();
+        }
+    } while (choice != 3);
 
     return 0;
 }
