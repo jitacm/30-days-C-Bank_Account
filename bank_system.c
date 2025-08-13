@@ -405,7 +405,6 @@ int authenticateAdmin(const char *pin_input) {
 }
 
 
-
 void createAccount()
 {
     struct Account a;
