@@ -25,6 +25,7 @@
 #define ADMIN_FILE "admin.dat"
 #define ADMIN_MAGIC "ADM1v1"
 #define ADMIN_MAGIC_LEN 6
+#define TRANSACTIONS_FILE "transactions.dat"
 
 typedef unsigned char BYTE;
 typedef unsigned int  WORD;
@@ -184,6 +185,29 @@ void sha256(const BYTE *data, size_t len, BYTE *out_hash)
     sha256_final(&ctx, out_hash);
 }
 
+// =========================================================================
+// NEW ENUM AND STRUCT FOR TRANSACTION HISTORY
+// =========================================================================
+
+typedef enum {
+    DEPOSIT,
+    WITHDRAWAL,
+    TRANSFER_OUT,
+    TRANSFER_IN
+} TransactionType;
+
+struct Transaction {
+    int acc_no;
+    TransactionType type;
+    float amount;
+    long timestamp; // Stored as a Unix timestamp
+    int receiver_acc_no; // Only used for TRANSFER_OUT
+};
+
+// =========================================================================
+// EXISTING STRUCTS
+// =========================================================================
+
 struct Account
 {
     int acc_no;
@@ -200,6 +224,30 @@ typedef struct {
     unsigned char salt[SALT_SIZE];
     unsigned char pin_hash[HASH_SIZE];
 } AdminRecord;
+
+// =========================================================================
+// NEW FUNCTION TO LOG TRANSACTIONS
+// =========================================================================
+
+void logTransaction(int acc_no, TransactionType type, float amount, int receiver_acc) {
+    FILE *fp = fopen(TRANSACTIONS_FILE, "ab");
+    if (!fp) {
+        printf(RED "Error: Could not open transactions file for logging.\n" RESET);
+        return;
+    }
+    struct Transaction t;
+    t.acc_no = acc_no;
+    t.type = type;
+    t.amount = amount;
+    t.timestamp = time(NULL);
+    t.receiver_acc_no = receiver_acc;
+    fwrite(&t, sizeof(struct Transaction), 1, fp);
+    fclose(fp);
+}
+
+// =========================================================================
+// EXISTING HELPER FUNCTIONS
+// =========================================================================
 
 void generateSalt(unsigned char *salt, size_t length) {
     for (size_t i = 0; i < length; i++) {
@@ -480,6 +528,8 @@ void deposit()
             a.balance += amount;
             fseek(fp, -sizeof(struct Account), SEEK_CUR);
             fwrite(&a, sizeof(struct Account), 1, fp);
+            // Log the deposit transaction
+            logTransaction(acc_no, DEPOSIT, amount, 0);
             printf(GREEN "Deposit successful. New balance: %.2f\n" RESET, a.balance);
             break;
         }
@@ -540,6 +590,8 @@ void withdraw()
                 a.balance -= amount;
                 fseek(fp, -sizeof(struct Account), SEEK_CUR);
                 fwrite(&a, sizeof(struct Account), 1, fp);
+                // Log the withdrawal transaction
+                logTransaction(acc_no, WITHDRAWAL, amount, 0);
                 printf(GREEN "Withdraw successful. New balance: %.2f\n" RESET, a.balance);
             } else {
                 printf(RED "Insufficient balance.\n" RESET);
@@ -641,6 +693,8 @@ void transferMoney() {
         goto cleanup;
     }
     fflush(fp);
+    // Log transfer out transaction
+    logTransaction(senderAcc, TRANSFER_OUT, amount, receiverAcc);
 
     receiver.balance += amount;
     fseek(fp, receiverPos, SEEK_SET);
@@ -653,6 +707,9 @@ void transferMoney() {
         goto cleanup;
     }
     fflush(fp);
+    // Log transfer in transaction
+    logTransaction(receiverAcc, TRANSFER_IN, amount, senderAcc);
+
 
     printf(GREEN "Rs. %.2f successfully transferred from %s to %s\n" RESET, amount, sender.name, receiver.name);
 
@@ -674,6 +731,82 @@ void viewAccounts()
     while (fread(&a, sizeof(struct Account), 1, fp))
         printf("| %-11d | %-25s | %-28.2f |\n", a.acc_no, a.name, a.balance);
     printf(BLUE "+-------------+---------------------------+------------------------------+\n" RESET);
+    fclose(fp);
+}
+
+// =========================================================================
+// NEW FUNCTION TO VIEW TRANSACTION HISTORY
+// =========================================================================
+
+void viewTransactionHistory() {
+    int acc_no;
+    char pin_str[32];
+    int ch;
+    
+    printf(GREEN "Enter account number to view history: " RESET);
+    if (scanf("%d", &acc_no) != 1) {
+        printf(RED "Invalid account number input.\n" RESET);
+        flush_stdin();
+        return;
+    }
+    printf(GREEN "Enter your PIN: " RESET);
+    flush_stdin();
+    getMaskedInput(pin_str, sizeof(pin_str));
+
+    if (!authenticate(acc_no, pin_str)) {
+        printf(RED "Authentication failed. Wrong account or PIN.\n" RESET);
+        return;
+    }
+    
+    FILE *fp = fopen(TRANSACTIONS_FILE, "rb");
+    if (!fp) {
+        printf(YELLOW "No transaction history found for any account.\n" RESET);
+        return;
+    }
+    
+    struct Transaction t;
+    int found = 0;
+    
+    printf(BLUE "\n===================================================================\n" RESET);
+    printf(BLUE "         Transaction History for Account %d\n" RESET, acc_no);
+    printf(BLUE "===================================================================\n" RESET);
+    printf(BLUE "| Date & Time             | Type         | Amount      | Details\n" RESET);
+    printf(BLUE "-------------------------------------------------------------------\n" RESET);
+
+    while (fread(&t, sizeof(struct Transaction), 1, fp)) {
+        if (t.acc_no == acc_no) {
+            found = 1;
+            char time_str[30];
+            struct tm *local_time = localtime(&t.timestamp);
+            strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", local_time);
+
+            printf("| %s | ", time_str);
+            switch (t.type) {
+                case DEPOSIT:
+                    printf(GREEN "DEPOSIT      " RESET);
+                    printf("| %-11.2f | From Self\n", t.amount);
+                    break;
+                case WITHDRAWAL:
+                    printf(RED "WITHDRAWAL   " RESET);
+                    printf("| %-11.2f | To Self\n", t.amount);
+                    break;
+                case TRANSFER_OUT:
+                    printf(YELLOW "TRANSFER OUT " RESET);
+                    printf("| %-11.2f | To Account %d\n", t.amount, t.receiver_acc_no);
+                    break;
+                case TRANSFER_IN:
+                    printf(GREEN "TRANSFER IN  " RESET);
+                    printf("| %-11.2f | From Account %d\n", t.amount, t.receiver_acc_no);
+                    break;
+            }
+        }
+    }
+
+    if (!found) {
+        printf(YELLOW "\n  No transactions found for this account.\n" RESET);
+    }
+
+    printf(BLUE "===================================================================\n" RESET);
     fclose(fp);
 }
 
@@ -988,8 +1121,9 @@ void userMenu() {
         printf(YELLOW "2. Deposit\n" RESET);
         printf(YELLOW "3. Withdraw\n" RESET);
         printf(YELLOW "4. Transfer Money\n" RESET);
-        printf(YELLOW "5. Generate Account Statement\n" RESET); 
-        printf(YELLOW "6. Exit to Main Menu\n" RESET);
+        printf(YELLOW "5. Generate Account Statement\n" RESET);
+        printf(YELLOW "6. View Transaction History\n" RESET);
+        printf(YELLOW "7. Exit to Main Menu\n" RESET);
         printf(GREEN "Enter your choice: " RESET);
 
         if (scanf("%d", &choice) != 1) {
@@ -1015,17 +1149,20 @@ void userMenu() {
                 generateAccountStatement();
                 break;
             case 6:
+                viewTransactionHistory();
+                break;
+            case 7:
                 printf(GREEN "Exiting user menu...\n" RESET);
                 break;
             default:
                 printf(RED "Invalid choice!\n" RESET);
         }
-        if (choice != 6) {
+        if (choice != 7) {
             printf(YELLOW "\nPress Enter to continue..." RESET);
             flush_stdin();
             getchar();
         }
-    } while (choice != 6);
+    } while (choice != 7);
 }
 
 void adminMenu() {
