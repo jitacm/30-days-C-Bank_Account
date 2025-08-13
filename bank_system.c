@@ -26,9 +26,8 @@
 #define ADMIN_MAGIC "ADM1v1"
 #define ADMIN_MAGIC_LEN 6
 
-// --- SHA-256 Implementation (public domain) ---
-typedef unsigned char BYTE;         // 8-bit byte
-typedef unsigned int  WORD;         // 32-bit word
+typedef unsigned char BYTE;
+typedef unsigned int  WORD;
 
 #define ROTLEFT(a,b) (((a) << (b)) | ((a) >> (32-(b))))
 #define ROTRIGHT(a,b) (((a) >> (b)) | ((a) << (32-(b))))
@@ -141,7 +140,6 @@ void sha256_final(SHA256_CTX *ctx, BYTE hash[])
 
     i = ctx->datalen;
 
-    // Pad whatever data is left in the buffer.
     if (ctx->datalen < 56) {
         ctx->data[i++] = 0x80;
         while (i < 56)
@@ -155,7 +153,6 @@ void sha256_final(SHA256_CTX *ctx, BYTE hash[])
         memset(ctx->data, 0, 56);
     }
 
-    // Append to the padding the total message's length in bits and transform.
     ctx->bitlen += ctx->datalen * 8;
     ctx->data[63] = ctx->bitlen;
     ctx->data[62] = ctx->bitlen >> 8;
@@ -167,8 +164,6 @@ void sha256_final(SHA256_CTX *ctx, BYTE hash[])
     ctx->data[56] = ctx->bitlen >> 56;
     sha256_transform(ctx, ctx->data);
 
-    // Since this implementation uses little endian byte ordering and SHA uses big endian,
-    // reverse all the bytes when copying the final state to the output hash.
     for (i=0; i < 4; ++i) {
         hash[i]      = (ctx->state[0] >> (24 - i * 8)) & 0x000000ff;
         hash[i + 4]  = (ctx->state[1] >> (24 - i * 8)) & 0x000000ff;
@@ -188,7 +183,6 @@ void sha256(const BYTE *data, size_t len, BYTE *out_hash)
     sha256_update(&ctx, data, len);
     sha256_final(&ctx, out_hash);
 }
-// --- End SHA-256 Implementation ---
 
 struct Account
 {
@@ -206,38 +200,6 @@ typedef struct {
     unsigned char salt[SALT_SIZE];
     unsigned char pin_hash[HASH_SIZE];
 } AdminRecord;
-
-// ------- UTILITY FUNCTIONS -------
-void generateSalt(unsigned char *salt, size_t length);
-void hashPin(const char *pin, const unsigned char *salt, size_t salt_len, unsigned char *out_hash);
-int accountExists(int acc_no);
-int authenticate(int acc_no, const char *pin_input);
-int authenticateAdmin(const char *pin_input);
-void createAccount();
-void deposit();
-void withdraw();
-void transferMoney();
-void viewAccounts();
-void searchAccount(int show_pin); // Modified function signature
-void updateAccountName();
-void deleteAccount();
-void printHex(const unsigned char *data, size_t len);
-void flush_stdin(void);
-void getMaskedInput(char *buffer, size_t size);
-
-// Admin credential helpers
-int loadAdminCredentials(unsigned char *salt, unsigned char *hash);
-int saveAdminCredentials(const unsigned char *salt, const unsigned char *hash);
-int setAdminPinInteractive(void);
-int adminInitIfNeeded(void);
-
-// New Feature: User-Friendly Account Statement
-void generateAccountStatement();
-
-// New Menu functions
-void userMenu();
-void adminMenu();
-
 
 void generateSalt(unsigned char *salt, size_t length) {
     for (size_t i = 0; i < length; i++) {
@@ -320,7 +282,6 @@ int authenticate(int acc_no, const char *pin_input) {
     }
 }
 
-// --- Admin credentials (secure storage) ---
 int loadAdminCredentials(unsigned char *salt, unsigned char *hash) {
     FILE *fp = fopen(ADMIN_FILE, "rb");
     if (!fp) return 0;
@@ -345,7 +306,6 @@ int saveAdminCredentials(const unsigned char *salt, const unsigned char *hash) {
     size_t w = fwrite(&rec, sizeof(AdminRecord), 1, fp);
     fclose(fp);
 #ifndef _WIN32
-    // Restrict permissions on Unix-like systems: owner read/write only
     chmod(ADMIN_FILE, S_IRUSR | S_IWUSR);
 #endif
     return w == 1;
@@ -595,7 +555,7 @@ void withdraw()
 }
 
 void transferMoney() {
-    FILE *fp;
+    FILE *fp = fopen("accounts.dat", "rb+");
     struct Account sender, receiver;
     int senderAcc, receiverAcc;
     char senderPin_str[32];
@@ -607,28 +567,23 @@ void transferMoney() {
     printf("Enter Sender Account Number: ");
     if (scanf("%d", &senderAcc) != 1) {
         printf(RED "Invalid input format.\n" RESET);
-        int ch;
-        while ((ch = getchar()) != '\n' && ch != EOF);
+        flush_stdin();
         return;
     }
     printf("Enter Sender PIN: ");
-    int ch;
-    while ((ch = getchar()) != '\n' && ch != EOF); // Flush newline before masked input
+    flush_stdin();
     getMaskedInput(senderPin_str, sizeof(senderPin_str));
 
-    // Authenticate sender
     if (!authenticate(senderAcc, senderPin_str)) {
         printf(RED "Authentication failed. Sender account not found or invalid PIN.\n" RESET);
         return;
     }
 
-    fp = fopen("accounts.dat", "rb+");
     if (!fp) {
         printf(YELLOW "No accounts found.\n" RESET);
         return;
     }
 
-    // Find sender to get their details
     rewind(fp);
     while (fread(&sender, sizeof(struct Account), 1, fp) == 1) {
         if (sender.acc_no == senderAcc) {
@@ -641,18 +596,15 @@ void transferMoney() {
     printf("Enter Receiver Account Number: ");
     if (scanf("%d", &receiverAcc) != 1) {
         printf(RED "Invalid input format.\n" RESET);
-        fclose(fp);
-        return;
+        flush_stdin();
+        goto cleanup;
     }
     if (senderAcc == receiverAcc) {
         printf(RED "Cannot transfer money to the same account.\n" RESET);
-        fclose(fp);
-        return;
+        goto cleanup;
     }
 
-    rewind(fp); // Start search again for receiver
-    
-    // Find receiver
+    rewind(fp);
     while (fread(&receiver, sizeof(struct Account), 1, fp) == 1) {
         if (receiver.acc_no == receiverAcc) {
             foundReceiver = 1;
@@ -662,40 +614,50 @@ void transferMoney() {
     }
     if (!foundReceiver) {
         printf(RED "Receiver account not found.\n" RESET);
-        fclose(fp);
-        return;
+        goto cleanup;
     }
 
     printf("Enter amount to transfer: ");
     if (scanf("%f", &amount) != 1) {
         printf(RED "Invalid input format.\n" RESET);
-        fclose(fp);
-        return;
+        flush_stdin();
+        goto cleanup;
     }
 
     if (amount <= 0) {
         printf(RED "Invalid amount.\n" RESET);
-        fclose(fp);
-        return;
+        goto cleanup;
     }
 
     if (sender.balance < amount) {
         printf(RED "Insufficient balance in sender's account.\n" RESET);
-        fclose(fp);
-        return;
+        goto cleanup;
     }
 
     sender.balance -= amount;
     fseek(fp, senderPos, SEEK_SET);
-    fwrite(&sender, sizeof(struct Account), 1, fp);
+    if (fwrite(&sender, sizeof(struct Account), 1, fp) != 1) {
+        printf(RED "Error writing to sender's account file. Transaction aborted.\n" RESET);
+        goto cleanup;
+    }
+    fflush(fp);
 
     receiver.balance += amount;
     fseek(fp, receiverPos, SEEK_SET);
-    fwrite(&receiver, sizeof(struct Account), 1, fp);
+    if (fwrite(&receiver, sizeof(struct Account), 1, fp) != 1) {
+        printf(RED "Error writing to receiver's account file. Transaction aborted.\n" RESET);
+        sender.balance += amount;
+        fseek(fp, senderPos, SEEK_SET);
+        fwrite(&sender, sizeof(struct Account), 1, fp);
+        fflush(fp);
+        goto cleanup;
+    }
+    fflush(fp);
 
     printf(GREEN "Rs. %.2f successfully transferred from %s to %s\n" RESET, amount, sender.name, receiver.name);
 
-    fclose(fp);
+cleanup:
+    if (fp) fclose(fp);
 }
 
 void viewAccounts()
@@ -715,7 +677,6 @@ void viewAccounts()
     fclose(fp);
 }
 
-// searchAccount now does not require a PIN since it's an admin function
 void searchAccount(int show_pin)
 {
     int acc_no;
@@ -757,7 +718,6 @@ void searchAccount(int show_pin)
     }
 }
 
-// updateAccountName now does not require an internal admin check
 void updateAccountName()
 {
     int acc_no;
@@ -814,7 +774,6 @@ void updateAccountName()
     }
 }
 
-// deleteAccount now does not require an internal admin check
 void deleteAccount()
 {
     int acc_no;
@@ -848,7 +807,6 @@ void deleteAccount()
         if (a.acc_no == acc_no)
         {
             found = 1;
-            // Skip writing this account => it will be deleted
             printf(YELLOW "Deleting account: %d, Name: %s, Balance: %.2f\n" RESET, 
                        a.acc_no, a.name, a.balance);
             continue;
@@ -887,11 +845,6 @@ void flush_stdin(void)
     while ((c = getchar()) != '\n' && c != EOF);
 }
 
-/* Cross-platform masked PIN input:
- * - On Windows uses _getch()
- * - On Unix uses termios to disable echo
- * Accepts backspace. Stops on Enter. Writes null-terminated string.
- */
 void getMaskedInput(char *buffer, size_t size)
 {
     if (size == 0) return;
@@ -899,7 +852,7 @@ void getMaskedInput(char *buffer, size_t size)
 #ifdef _WIN32
     int ch;
     while ((ch = _getch()) != '\r' && ch != EOF) {
-        if (ch == '\b' || ch == 127) { // backspace
+        if (ch == '\b' || ch == 127) {
             if (idx > 0) {
                 idx--;
                 printf("\b \b");
@@ -920,7 +873,7 @@ void getMaskedInput(char *buffer, size_t size)
 
     int ch;
     while ((ch = getchar()) != '\n' && ch != EOF) {
-        if (ch == 127 || ch == '\b') { // backspace
+        if (ch == 127 || ch == '\b') {
             if (idx > 0) {
                 idx--;
                 printf("\b \b");
@@ -985,7 +938,6 @@ void generateAccountStatement() {
     }
 }
 
-// ------- NEW MENU FUNCTIONS -------
 void userMenu() {
     int choice;
     do {
@@ -1058,7 +1010,7 @@ void adminMenu() {
                 viewAccounts();
                 break;
             case 2:
-                searchAccount(0); // Admin search, no PIN needed. '0' for show_pin
+                searchAccount(0);
                 break;
             case 3:
                 updateAccountName();
@@ -1080,7 +1032,6 @@ void adminMenu() {
     } while (choice != 5);
 }
 
-// ------- MAIN MENU -------
 int main()
 {
     srand((unsigned int)time(NULL));
