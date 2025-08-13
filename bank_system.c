@@ -25,7 +25,9 @@
 #define ADMIN_FILE "admin.dat"
 #define ADMIN_MAGIC "ADM1v1"
 #define ADMIN_MAGIC_LEN 6
+#define ACCOUNTS_FILE "accounts.dat"
 #define TRANSACTIONS_FILE "transactions.dat"
+#define LOANS_FILE "loans.dat"
 
 typedef unsigned char BYTE;
 typedef unsigned int  WORD;
@@ -39,12 +41,209 @@ typedef unsigned int  WORD;
 #define SIG0(x) (ROTRIGHT(x,7) ^ ROTRIGHT(x,18) ^ ((x) >> 3))
 #define SIG1(x) (ROTRIGHT(x,17) ^ ROTRIGHT(x,19) ^ ((x) >> 10))
 
+// SHA256 context structure and functions
 typedef struct {
     BYTE data[64];
     WORD datalen;
     unsigned long long bitlen;
     WORD state[8];
 } SHA256_CTX;
+
+void sha256_transform(SHA256_CTX *ctx, const BYTE data[]);
+void sha256_init(SHA256_CTX *ctx);
+void sha256_update(SHA256_CTX *ctx, const BYTE data[], size_t len);
+void sha256_final(SHA256_CTX *ctx, BYTE hash[]);
+void sha256(const BYTE *data, size_t len, BYTE *out_hash);
+
+// =========================================================================
+// NEW ENUMS AND STRUCTS FOR LOAN MANAGEMENT
+// =========================================================================
+
+typedef enum {
+    PENDING,
+    APPROVED,
+    REJECTED
+} LoanStatus;
+
+struct Loan {
+    int loan_id;
+    int acc_no;
+    float amount;
+    long timestamp; // When the loan was applied for
+    LoanStatus status;
+};
+
+// =========================================================================
+// EXISTING ENUMS AND STRUCTS
+// =========================================================================
+
+typedef enum {
+    DEPOSIT,
+    WITHDRAWAL,
+    TRANSFER_OUT,
+    TRANSFER_IN
+} TransactionType;
+
+struct Transaction {
+    int acc_no;
+    TransactionType type;
+    float amount;
+    long timestamp;
+    int receiver_acc_no;
+};
+
+struct Account {
+    int acc_no;
+    char name[100];
+    float balance;
+    unsigned char pin_hash[HASH_SIZE];
+    unsigned char salt[SALT_SIZE];
+    int failed_attempts;
+    int locked;
+};
+
+typedef struct {
+    char magic[8];
+    unsigned char salt[SALT_SIZE];
+    unsigned char pin_hash[HASH_SIZE];
+} AdminRecord;
+
+// =========================================================================
+// FUNCTION PROTOTYPES
+// =========================================================================
+void flush_stdin(void);
+void getMaskedInput(char *buffer, size_t size);
+int authenticate(int acc_no, const char *pin_input);
+int accountExists(int acc_no);
+void createAccount();
+void deposit();
+void withdraw();
+void transferMoney();
+void viewAccounts();
+void searchAccount(int show_pin);
+void updateAccountName();
+void deleteAccount();
+void userMenu();
+void adminMenu();
+void logTransaction(int acc_no, TransactionType type, float amount, int receiver_acc);
+void viewTransactionHistory();
+void applyForLoan(); // New function
+int isLoanPending(int acc_no); // New helper function
+
+// =========================================================================
+// NEW FUNCTION TO APPLY FOR A LOAN
+// =========================================================================
+
+/**
+ * @brief Allows a user to apply for a loan and saves the application to a file.
+ */
+void applyForLoan() {
+    int acc_no;
+    char pin_str[32];
+    float loanAmount;
+    int ch;
+    struct Account currentAccount;
+
+    printf(GREEN "\n--- Loan Application ---\n" RESET);
+    printf("Enter your account number: " RESET);
+    if (scanf("%d", &acc_no) != 1) {
+        printf(RED "Invalid input format.\n" RESET);
+        flush_stdin();
+        return;
+    }
+
+    printf("Enter your PIN: " RESET);
+    flush_stdin();
+    getMaskedInput(pin_str, sizeof(pin_str));
+
+    if (!authenticate(acc_no, pin_str)) {
+        printf(RED "Authentication failed. Wrong account or PIN.\n" RESET);
+        return;
+    }
+
+    // Check if the user already has a pending loan
+    if (isLoanPending(acc_no)) {
+        printf(YELLOW "You already have a pending loan application. Please wait for a response.\n" RESET);
+        return;
+    }
+
+    // Get the account details to check eligibility
+    FILE *fp = fopen(ACCOUNTS_FILE, "rb");
+    if (fp) {
+        while (fread(&currentAccount, sizeof(struct Account), 1, fp)) {
+            if (currentAccount.acc_no == acc_no) {
+                break;
+            }
+        }
+        fclose(fp);
+    } else {
+        printf(RED "Error reading account data.\n" RESET);
+        return;
+    }
+    
+    // Simple eligibility check: must have a positive balance
+    if (currentAccount.balance <= 0) {
+        printf(RED "You are not eligible for a loan with a non-positive balance. Your balance must be greater than 0.\n" RESET);
+        return;
+    }
+
+    printf("Enter desired loan amount: " RESET);
+    if (scanf("%f", &loanAmount) != 1) {
+        printf(RED "Invalid input format.\n" RESET);
+        flush_stdin();
+        return;
+    }
+
+    if (loanAmount <= 0) {
+        printf(RED "Loan amount must be positive.\n" RESET);
+        return;
+    }
+
+    // Create a new loan application record
+    FILE *loans_fp = fopen(LOANS_FILE, "ab");
+    if (!loans_fp) {
+        printf(RED "Error creating or opening loans file.\n" RESET);
+        return;
+    }
+
+    struct Loan newLoan;
+    newLoan.loan_id = (int)time(NULL); // Simple way to generate a unique ID
+    newLoan.acc_no = acc_no;
+    newLoan.amount = loanAmount;
+    newLoan.timestamp = time(NULL);
+    newLoan.status = PENDING;
+
+    fwrite(&newLoan, sizeof(struct Loan), 1, loans_fp);
+    fclose(loans_fp);
+
+    printf(GREEN "Loan application for Rs. %.2f submitted successfully.\n" RESET, loanAmount);
+    printf(YELLOW "Please wait for an administrator to review your application.\n" RESET);
+}
+
+/**
+ * @brief Checks if an account already has a pending loan application.
+ * @param acc_no The account number to check.
+ * @return 1 if a pending loan exists, 0 otherwise.
+ */
+int isLoanPending(int acc_no) {
+    FILE *fp = fopen(LOANS_FILE, "rb");
+    if (!fp) {
+        return 0; // No file, so no pending loans
+    }
+    struct Loan loan;
+    while (fread(&loan, sizeof(struct Loan), 1, fp)) {
+        if (loan.acc_no == acc_no && loan.status == PENDING) {
+            fclose(fp);
+            return 1;
+        }
+    }
+    fclose(fp);
+    return 0;
+}
+
+// =========================================================================
+// EXISTING FUNCTION IMPLEMENTATIONS (MODIFIED FOR NEW FEATURES)
+// =========================================================================
 
 void sha256_transform(SHA256_CTX *ctx, const BYTE data[])
 {
@@ -185,70 +384,6 @@ void sha256(const BYTE *data, size_t len, BYTE *out_hash)
     sha256_final(&ctx, out_hash);
 }
 
-// =========================================================================
-// NEW ENUM AND STRUCT FOR TRANSACTION HISTORY
-// =========================================================================
-
-typedef enum {
-    DEPOSIT,
-    WITHDRAWAL,
-    TRANSFER_OUT,
-    TRANSFER_IN
-} TransactionType;
-
-struct Transaction {
-    int acc_no;
-    TransactionType type;
-    float amount;
-    long timestamp; // Stored as a Unix timestamp
-    int receiver_acc_no; // Only used for TRANSFER_OUT
-};
-
-// =========================================================================
-// EXISTING STRUCTS
-// =========================================================================
-
-struct Account
-{
-    int acc_no;
-    char name[100];
-    float balance;
-    unsigned char pin_hash[HASH_SIZE];
-    unsigned char salt[SALT_SIZE];
-    int failed_attempts;
-    int locked;
-};
-
-typedef struct {
-    char magic[8];
-    unsigned char salt[SALT_SIZE];
-    unsigned char pin_hash[HASH_SIZE];
-} AdminRecord;
-
-// =========================================================================
-// NEW FUNCTION TO LOG TRANSACTIONS
-// =========================================================================
-
-void logTransaction(int acc_no, TransactionType type, float amount, int receiver_acc) {
-    FILE *fp = fopen(TRANSACTIONS_FILE, "ab");
-    if (!fp) {
-        printf(RED "Error: Could not open transactions file for logging.\n" RESET);
-        return;
-    }
-    struct Transaction t;
-    t.acc_no = acc_no;
-    t.type = type;
-    t.amount = amount;
-    t.timestamp = time(NULL);
-    t.receiver_acc_no = receiver_acc;
-    fwrite(&t, sizeof(struct Transaction), 1, fp);
-    fclose(fp);
-}
-
-// =========================================================================
-// EXISTING HELPER FUNCTIONS
-// =========================================================================
-
 void generateSalt(unsigned char *salt, size_t length) {
     for (size_t i = 0; i < length; i++) {
         salt[i] = (unsigned char)(rand() % 256);
@@ -265,7 +400,7 @@ void hashPin(const char *pin, const unsigned char *salt, size_t salt_len, unsign
 
 int accountExists(int acc_no)
 {
-    FILE *fp = fopen("accounts.dat", "rb");
+    FILE *fp = fopen(ACCOUNTS_FILE, "rb");
     if (!fp) return 0;
     struct Account a;
     while (fread(&a, sizeof(struct Account), 1, fp)) {
@@ -279,7 +414,7 @@ int accountExists(int acc_no)
 }
 
 int authenticate(int acc_no, const char *pin_input) {
-    FILE *fp = fopen("accounts.dat", "rb+");
+    FILE *fp = fopen(ACCOUNTS_FILE, "rb+");
     if (!fp) {
         return 0;
     }
@@ -412,7 +547,6 @@ int authenticateAdmin(const char *pin_input) {
     return memcmp(input_hash, stored_hash, HASH_SIZE) == 0;
 }
 
-
 void createAccount()
 {
     struct Account a;
@@ -469,7 +603,7 @@ void createAccount()
     a.failed_attempts = 0;
     a.locked = 0;
 
-    FILE *fp = fopen("accounts.dat", "ab");
+    FILE *fp = fopen(ACCOUNTS_FILE, "ab");
     if (!fp) {
         printf(RED "Error opening accounts file.\n" RESET);
         return;
@@ -515,7 +649,7 @@ void deposit()
         return;
     }
 
-    FILE *fp = fopen("accounts.dat", "rb+");
+    FILE *fp = fopen(ACCOUNTS_FILE, "rb+");
     if (!fp) {
         printf(YELLOW "No accounts found.\n" RESET);
         return;
@@ -576,7 +710,7 @@ void withdraw()
         return;
     }
 
-    FILE *fp = fopen("accounts.dat", "rb+");
+    FILE *fp = fopen(ACCOUNTS_FILE, "rb+");
     if (!fp) {
         printf(YELLOW "No accounts found.\n" RESET);
         return;
@@ -607,7 +741,7 @@ void withdraw()
 }
 
 void transferMoney() {
-    FILE *fp = fopen("accounts.dat", "rb+");
+    FILE *fp = fopen(ACCOUNTS_FILE, "rb+");
     struct Account sender, receiver;
     int senderAcc, receiverAcc;
     char senderPin_str[32];
@@ -717,9 +851,25 @@ cleanup:
     if (fp) fclose(fp);
 }
 
+void logTransaction(int acc_no, TransactionType type, float amount, int receiver_acc) {
+    FILE *fp = fopen(TRANSACTIONS_FILE, "ab");
+    if (!fp) {
+        printf(RED "Error: Could not open transactions file for logging.\n" RESET);
+        return;
+    }
+    struct Transaction t;
+    t.acc_no = acc_no;
+    t.type = type;
+    t.amount = amount;
+    t.timestamp = time(NULL);
+    t.receiver_acc_no = receiver_acc;
+    fwrite(&t, sizeof(struct Transaction), 1, fp);
+    fclose(fp);
+}
+
 void viewAccounts()
 {
-    FILE *fp = fopen("accounts.dat", "rb");
+    FILE *fp = fopen(ACCOUNTS_FILE, "rb");
     if (!fp) {
         printf(YELLOW "No accounts found.\n" RESET);
         return;
@@ -733,10 +883,6 @@ void viewAccounts()
     printf(BLUE "+-------------+---------------------------+------------------------------+\n" RESET);
     fclose(fp);
 }
-
-// =========================================================================
-// NEW FUNCTION TO VIEW TRANSACTION HISTORY
-// =========================================================================
 
 void viewTransactionHistory() {
     int acc_no;
@@ -822,7 +968,7 @@ void searchAccount(int show_pin)
         return;
     }
     
-    FILE *fp = fopen("accounts.dat", "rb");
+    FILE *fp = fopen(ACCOUNTS_FILE, "rb");
     if (!fp) {
         printf(YELLOW "No accounts found.\n" RESET);
         return;
@@ -880,7 +1026,7 @@ void updateAccountName()
         return;
     }
 
-    FILE *fp = fopen("accounts.dat", "rb+");
+    FILE *fp = fopen(ACCOUNTS_FILE, "rb+");
     if (!fp) {
         printf(RED "No accounts found.\n" RESET);
         return;
@@ -920,7 +1066,7 @@ void deleteAccount()
         return;
     }
 
-    FILE *fp = fopen("accounts.dat", "rb");
+    FILE *fp = fopen(ACCOUNTS_FILE, "rb");
     if (!fp) {
         printf(RED "No accounts found.\n" RESET);
         return;
@@ -954,8 +1100,8 @@ void deleteAccount()
 
     if (found)
     {
-        remove("accounts.dat");
-        rename("temp.dat", "accounts.dat");
+        remove(ACCOUNTS_FILE);
+        rename("temp.dat", ACCOUNTS_FILE);
         printf(GREEN "Account %d deleted successfully.\n" RESET, acc_no);
     }
     else
@@ -1044,7 +1190,7 @@ void generateAccountStatement() {
         return;
     }
     
-    FILE *fp = fopen("accounts.dat", "rb");
+    FILE *fp = fopen(ACCOUNTS_FILE, "rb");
     if (!fp) {
         printf(YELLOW "No accounts found.\n" RESET);
         return;
@@ -1083,7 +1229,7 @@ void unlockAccount() {
         return;
     }
 
-    FILE *fp = fopen("accounts.dat", "rb+");
+    FILE *fp = fopen(ACCOUNTS_FILE, "rb+");
     if (!fp) {
         printf(RED "No accounts found.\n" RESET);
         return;
@@ -1123,7 +1269,8 @@ void userMenu() {
         printf(YELLOW "4. Transfer Money\n" RESET);
         printf(YELLOW "5. Generate Account Statement\n" RESET);
         printf(YELLOW "6. View Transaction History\n" RESET);
-        printf(YELLOW "7. Exit to Main Menu\n" RESET);
+        printf(YELLOW "7. Apply for Loan\n" RESET); // New menu option
+        printf(YELLOW "8. Exit to Main Menu\n" RESET);
         printf(GREEN "Enter your choice: " RESET);
 
         if (scanf("%d", &choice) != 1) {
@@ -1152,17 +1299,20 @@ void userMenu() {
                 viewTransactionHistory();
                 break;
             case 7:
+                applyForLoan();
+                break;
+            case 8:
                 printf(GREEN "Exiting user menu...\n" RESET);
                 break;
             default:
                 printf(RED "Invalid choice!\n" RESET);
         }
-        if (choice != 7) {
+        if (choice != 8) {
             printf(YELLOW "\nPress Enter to continue..." RESET);
             flush_stdin();
             getchar();
         }
-    } while (choice != 7);
+    } while (choice != 8);
 }
 
 void adminMenu() {
@@ -1271,3 +1421,4 @@ int main()
 
     return 0;
 }
+
