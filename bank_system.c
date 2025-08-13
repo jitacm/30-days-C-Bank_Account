@@ -247,6 +247,18 @@ void drawMenu()
     printf(BLUE "╚════════════════════════════════════════════════════════╝\n" RESET);
 }
 
+int adminLogin() {
+    char pin[10];
+    printf("Enter admin PIN: ");
+    scanf("%s", pin);
+    if (strcmp(pin, "1234") == 0) { // Replace with secure check
+        return 1;
+    }
+    printf(RED "Access denied. Invalid PIN.\n" RESET);
+    return 0;
+}
+
+
 void generateSalt(unsigned char *salt, size_t length)
 {
     const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -295,6 +307,7 @@ int accountExists(int acc_no)
  */
 int authenticate(int acc_no, const char *pin_input)
 {
+
     FILE *fp = fopen("accounts.dat", "rb");
     if (!fp)
         return 0;
@@ -325,6 +338,8 @@ int authenticate(int acc_no, const char *pin_input)
 
 void createAccount()
 {
+    if (!adminLogin()) return; // Require admin authentication
+
 
     struct Account a;
     char pin_str[32];
@@ -409,6 +424,8 @@ void createAccount()
 
 void deposit()
 {
+    if (!adminLogin()) return; // Require admin authentication
+
     int acc_no;
     char pin_str[32];
 
@@ -486,11 +503,14 @@ void deposit()
 
 void withdraw()
 {
+    if (!adminLogin()) return; // Require admin authentication
+
     int acc_no;
     char pin_str[32];
     char ch;
     float amount;
     int found = 0;
+
 
     printf(GREEN "Enter account number: " RESET);
     if (scanf("%d", &acc_no) != 1)
@@ -568,12 +588,11 @@ void withdraw()
 
 // ------- REMAINING FEATURES -------
 
-void viewAccounts()
-{
+void viewAccounts() {
+    if (!adminLogin()) return; // Require admin authentication
 
     FILE *fp = fopen("accounts.dat", "rb");
-    if (!fp)
-    {
+    if (!fp) {
         printf(YELLOW "No accounts found.\n" RESET);
         return;
     }
@@ -587,8 +606,11 @@ void viewAccounts()
     fclose(fp);
 }
 
+
 void searchAccount()
 {
+    if (!adminLogin()) return; // Require admin authentication
+
     int acc_no;
     char pin_str[32];
     int ch;
@@ -647,6 +669,8 @@ void searchAccount()
 
 void updateAccountName()
 {
+    if (!adminLogin()) return; // Require admin authentication
+
     int acc_no;
     char pin_str[32];
 
@@ -727,6 +751,8 @@ void updateAccountName()
 
 void deleteAccount()
 {
+    if (!adminLogin()) return; // Require admin authentication
+
     int acc_no;
     char pin_str[32];
     int found = 0;
