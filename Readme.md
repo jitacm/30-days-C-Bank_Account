@@ -1,4 +1,6 @@
-# 🏦 Bank Account Management System (C CLI) - Comprehensive Enterprise Version
+# 🏦 Bank Account Management System (C CLI) — Secure & Feature-Rich Version
+
+A comprehensive, secure command-line tool in C for managing bank accounts, handling transactions, processing loans, and calculating interest. This enhanced version builds upon robust security foundations, including PIN hashing, account lockout, masked PIN input, admin-level authentication, and adds crucial features like loan management and daily interest crediting.
 
 ## 📋 Project Overview
 
@@ -45,8 +47,8 @@ The application is divided into several key modules:
 - x86 or x64 processor architecture
 
 **Software Requirements:**
-- C compiler (GCC 4.9+, Clang 3.5+, or MSVC 2015+)
-- C99 standard compliance
+* **C Compiler:** GCC recommended (C99 compliant or later), Clang 3.5+, or MSVC 2015+
+* **Standard Libraries:** `stdio.h`, `stdlib.h`, `string.h`, `time.h`, `ctype.h`, `termios.h` (for Unix-like systems), `unistd.h`
 - Math library support (-lm flag)
 - POSIX-compliant terminal (for Unix-like systems)
 
@@ -77,27 +79,22 @@ gcc -DSECURITY_ENHANCED -D_FORTIFY_SOURCE=2 bank_system.c -o bank_system_secure 
 
 ### Installation Steps
 
+Ensure you are in the `jitacm-30-days-c-bank_account` directory.
+
 #### Linux/macOS Installation
 
-1. **Download and Preparation**
-   ```bash
-   git clone https://github.com/your-repo/bank-system.git
-   cd bank-system
-   chmod +x build.sh
-   ```
+```bash
+# Compile the program (Linux/macOS)
+# Note: The SHA-256 implementation is internal, so no external crypto library is strictly required.
+gcc bank_system.c -o bank_system -lm
 
-2. **Compilation Process**
-   ```bash
-   ./build.sh
-   # Or manually:
-   gcc bank_system.c -o bank_system -lm -Wall -Wextra
-   ```
+# Or manually with warnings:
+gcc bank_system.c -o bank_system -lm -Wall -Wextra
 
-3. **System Integration**
-   ```bash
-   sudo cp bank_system /usr/local/bin/
-   sudo chmod +x /usr/local/bin/bank_system
-   ```
+# System Integration
+sudo cp bank_system /usr/local/bin/
+sudo chmod +x /usr/local/bin/bank_system
+```
 
 #### Windows Installation
 
@@ -136,6 +133,16 @@ HashAlgorithm=SHA256
 ```
 
 ## 📦 Comprehensive Feature Set
+
+This CLI program provides a robust platform for managing bank accounts, offering a wide range of functionalities:
+
+* **Account Management:** Create new accounts with secure PINs and initial balances.
+* **Secure Transactions:** Deposit, withdraw, and transfer funds efficiently and securely.
+* **PIN Security:** Utilizes salted SHA-256 hashing for PINs, masked input, and account lockout mechanisms.
+* **Transaction History:** Detailed logging of all account activities for audit purposes.
+* **Loan Management:** Users can apply for loans, make repayments, and track their status. Administrators can review and approve/reject loan applications.
+* **Interest Calculation:** Automatically calculates and credits daily interest on account balances.
+* **Admin Controls:** Comprehensive tools for administrators, including account monitoring, unlocking, transaction review, loan management, and interest processing.
 
 ### Core Banking Operations
 
@@ -177,8 +184,26 @@ HashAlgorithm=SHA256
 
 ### Enhanced Security Framework
 
+#### Salted SHA-256 Hashing
+* PINs are never stored in plaintext.
+* Each PIN is hashed using SHA-256 combined with a unique random salt per account.
+* Protects against data breaches and offline attacks.
+
+#### Masked PIN Input
+* PINs are entered invisibly (masked with `*`) to prevent shoulder surfing.
+* Works cross-platform (Windows and Unix-like systems).
+
+#### Account Lockout
+* After 3 failed PIN attempts, accounts are locked.
+* Locked accounts cannot be accessed until unlocked by an administrator.
+* Prevents brute-force PIN guessing attacks.
+
+#### Admin Authentication
+* Critical administrative actions require admin PIN authentication.
+* Admin PIN is securely stored hashed with salt.
+* Admin PIN setup is prompted on the first run.
+
 #### Multi-Factor Authentication
-- **PIN-based Authentication**: Primary security layer
 - **Security Questions**: Secondary verification
 - **Biometric Simulation**: Fingerprint/facial recognition placeholder
 - **Device Registration**: Trusted device management
@@ -195,7 +220,47 @@ HashAlgorithm=SHA256
 - **Suspicious Activity Detection**: Pattern recognition
 - **Risk Assessment**: Automated risk scoring
 
-### Administrative Control Panel
+## 👤 User and Admin Menus
+
+This application provides distinct menus for users and administrators, ensuring proper separation of duties and access control.
+
+### User Menu Actions:
+
+* **Create Account**  
+  Enter account number, full name, set a 4-digit PIN (masked input), and initial balance.
+* **Deposit**  
+  Enter account number, PIN (masked), and deposit amount.
+* **Withdraw**  
+  Enter account number, PIN (masked), and withdrawal amount.
+* **Transfer Money**  
+  Securely transfer funds between accounts after PIN authentication.
+* **View Transaction History**  
+  View a detailed log of all transactions (deposits, withdrawals, transfers, loan repayments, interest credits) for the authenticated account.
+* **Generate Account Statement**  
+  View current balance and account holder details after authentication.
+* **Apply for Loan**  
+  Submit a loan application after PIN authentication.
+* **Repay Loan**  
+  Make payments towards an outstanding loan after PIN authentication.
+
+### Admin Menu Actions:
+
+* **View All Accounts**  
+  Displays all accounts with numbers, names, and balances.
+* **Search Account**  
+  Enter account number to view details.
+* **Update Account Holder Name**  
+  Update the name associated with an account. Requires admin PIN authentication.
+* **Delete Account**  
+  Permanently remove an account from the system. Requires admin PIN authentication.
+* **Unlock User Account**  
+  Manually unlock accounts that have been locked due to failed PIN attempts.
+* **Process Scheduled Interest** (Admin Triggered)  
+  Manually initiates the daily interest calculation and crediting process for all eligible accounts.
+* **View Interest Log**  
+  Displays a detailed log of all interest calculation events.
+* **Exit**  
+  Return to the main menu or close the program.
 
 #### User Management
 - **User Roles**: Admin, Teller, Manager, Auditor
@@ -215,6 +280,34 @@ HashAlgorithm=SHA256
 - **Compliance Reports**: Regulatory requirement reports
 - **Custom Reports**: User-defined report generation
 
+## ⚙️ How to Use Admin Features
+
+* On the first run, you will be prompted to set an admin PIN. Keep this PIN secure.
+* Select "Admin Login" from the main menu and enter the correct Admin PIN to access the Admin Menu.
+* The Admin Menu provides access to all administrative functions, including managing accounts, unlocking user accounts, processing scheduled interest calculations, and viewing logs.
+* Sensitive operations like updating account names, deleting accounts, and processing interest require admin PIN authentication.
+* Admin PINs are entered using masked input for enhanced security.
+
+## 📈 Interest Calculation & Scheduled Updates
+
+This system now incorporates a daily interest calculation feature for user account balances, alongside loan management capabilities.
+
+### How Interest Calculation Works:
+* **Daily Calculation:** Interest is computed daily based on the account's current balance and a predefined annual interest rate (`ANNUAL_INTEREST_RATE`, set at 5%).
+* **Eligibility:** Interest is credited only to accounts with a positive balance.
+* **Tracking:** The system records the `last_interest_date` for each account to ensure calculations are performed approximately once every 24 hours.
+* **Admin Triggered:** The interest calculation process (`Process Scheduled Interest`) must be manually initiated by an administrator via the Admin Menu. This provides administrative control and visibility over when interest is applied.
+* **Logging:** All interest crediting events are logged in a dedicated `interest_log.dat` file, accessible via the Admin Menu (`View Interest Log`), detailing the account, date, amount credited, and new balance.
+
+### Key Components:
+* `ANNUAL_INTEREST_RATE`: Configurable constant for the interest rate.
+* `Account` Structure: Updated to store `last_interest_date`.
+* `TransactionType`: New type `INTEREST_CREDIT` for logging.
+* `processScheduledInterest()`: Admin function to perform calculations.
+* `viewInterestLog()`: Admin function to display logs.
+
+**Note:** This implementation focuses on the calculation and admin-triggered application of interest. True background/automatic scheduling (e.g., running daily without admin intervention) is not included in this version but could be a future enhancement.
+
 ## 🔐 Enterprise Security Architecture
 
 ### Cryptographic Implementation
@@ -233,7 +326,6 @@ The system implements multiple cryptographic hash functions:
 - **RSA-2048**: Asymmetric encryption for key exchange
 
 ### Security Controls
-
 
 #### Intrusion Detection
 - **Failed Login Monitoring**: Automatic lockout mechanisms
@@ -348,6 +440,16 @@ typedef struct {
 - **Hash Tables**: Quick transaction retrieval
 - **Full-text Search**: Description and reference searching
 - **Range Queries**: Date and amount-based filtering
+
+## 🔧 Technologies Used
+
+* **C Language:** C99 Standard for core implementation.
+* **File I/O:** Binary file storage for persistent data (accounts, transactions, loans, admin credentials, interest logs).
+* **Hashing:** Internal SHA-256 implementation for secure PIN and credential storage.
+* **Terminal Interaction:**
+    * ANSI escape codes for colored output.
+    * Platform-specific handling (`termios.h` on Unix-like systems, `conio.h` on Windows) for masked input.
+* **Time & Date:** `time.h` library used for timestamps, transaction logging, and interest calculation scheduling.
 
 ## 🛠️ Development and Testing
 
@@ -541,6 +643,12 @@ A: Yes, the binary file format and indexing system can handle millions of record
 **Q: How secure is the PIN storage?**
 A: PINs are hashed using SHA-256 with unique salts. Plain-text PINs are never stored.
 
+**Q: Will this work on any operating system?**  
+A: Yes! The core logic is cross-platform. Input masking uses platform-specific headers (`termios.h` for Unix-like systems, `conio.h` for Windows). The build instructions provide guidance for common environments.
+
+**Q: How is interest calculated?**  
+A: Interest is calculated daily based on the account's balance and a fixed annual rate (5%). This process is triggered manually by an administrator via the Admin Menu (`Process Scheduled Interest`).
+
 ### Operational Questions
 
 **Q: How often should I backup the system?**
@@ -556,6 +664,12 @@ A: Current limitations include single-user access and file-based storage. These 
 A: Enable debug mode for detailed logging. Use the built-in performance profiler to identify bottlenecks.
 
 ### Security Questions
+
+**Q: What if I forget my User PIN?**  
+A: For your security, PINs cannot be recovered. If your account is locked due to failed attempts, contact an administrator to unlock it.
+
+**Q: What if I forget my Admin PIN?**  
+A: If the Admin PIN is lost, the `admin.dat` file will need to be deleted to reset the admin credentials (the system will prompt for a new PIN on the next run). This is a security measure to prevent unauthorized access if admin credentials are compromised.
 
 **Q: How do I reset a forgotten admin PIN?**
 A: Delete the admin.dat file and restart the system. A new admin PIN setup will be prompted.

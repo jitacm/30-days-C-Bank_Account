@@ -3,7 +3,9 @@
 #include <string.h>
 #include <ctype.h>
 #include <time.h>
-#include <errno.h>
+
+#include <math.h>
+
 
 #ifdef _WIN32
 #include <conio.h>
@@ -34,8 +36,12 @@
 #define ACCOUNTS_FILE "accounts.dat"
 #define TRANSACTIONS_FILE "transactions.dat"
 #define LOANS_FILE "loans.dat"
-#define BACKUP_DIR "backups"
-#define EXCHANGE_RATES_FILE "rates.dat"
+
+#define INTEREST_LOG_FILE "interest_log.dat"
+
+// Interest rate (5% annual)
+#define ANNUAL_INTEREST_RATE 0.05
+
 
 typedef unsigned char BYTE;
 typedef unsigned int  WORD;
@@ -82,9 +88,10 @@ typedef enum {
     WITHDRAWAL,
     TRANSFER_OUT,
     TRANSFER_IN,
-    LOAN_REPAYMENT,
-    LOAN_APPROVED,
-    LOAN_REJECTED
+
+    LOAN_REPAYMENT, // New transaction type
+    INTEREST_CREDIT // New transaction type for interest
+
 } TransactionType;
 
 struct Transaction {
@@ -104,7 +111,9 @@ struct Account {
     unsigned char salt[SALT_SIZE];
     int failed_attempts;
     int locked;
-    char currency[4]; // New field
+
+    long last_interest_date; // Track last interest calculation date
+
 };
 
 typedef struct {
@@ -162,6 +171,13 @@ void manageLoanApplications();
 float getExchangeRate(const char* from, const char* to); // New function prototype
 void initializeExchangeRates(); // New function prototype
 
+// New function prototypes for interest calculation
+void calculateInterestForAccount(struct Account *account);
+void processScheduledInterest();
+void viewInterestLog();
+void initializeLastInterestDate();
+int daysSinceLastInterest(long last_date);
+
 // =========================================================================
 // NEW FUNCTION IMPLEMENTATION
 // =========================================================================
@@ -203,6 +219,143 @@ float getExchangeRate(const char* from, const char* to) {
     fclose(fp);
     printf(RED "No exchange rate found for %s to %s. Using default rate of 1.0.\n" RESET, from, to);
     return 1.0f;
+}
+
+// =========================================================================
+// NEW FUNCTIONS FOR INTEREST CALCULATION
+// =========================================================================
+
+// Function to calculate interest for a single account
+void calculateInterestForAccount(struct Account *account) {
+    if (account->balance <= 0) return; // No interest for zero or negative balances
+    
+    // Calculate days since last interest calculation
+    int days = daysSinceLastInterest(account->last_interest_date);
+    if (days <= 0) return; // No need to calculate if already done today
+    
+    // Calculate daily interest rate (assuming 365 days in a year)
+    double daily_rate = ANNUAL_INTEREST_RATE / 365.0;
+    
+    // Calculate interest for the period
+    double interest = account->balance * daily_rate * days;
+    
+    // Update account balance
+    account->balance += (float)interest;
+    
+    // Update last interest date
+    account->last_interest_date = time(NULL);
+    
+    // Log the interest transaction
+    logTransaction(account->acc_no, INTEREST_CREDIT, (float)interest, 0);
+    
+    // Log interest calculation in separate file
+    FILE *log_fp = fopen(INTEREST_LOG_FILE, "a");
+    if (log_fp) {
+        fprintf(log_fp, "Account: %d, Date: %ld, Days: %d, Interest: %.2f, New Balance: %.2f\n",
+                account->acc_no, time(NULL), days, interest, account->balance);
+        fclose(log_fp);
+    }
+    
+    printf(GREEN "Interest of Rs. %.2f credited to account %d (for %d days)\n" RESET, 
+           (float)interest, account->acc_no, days);
+}
+
+// Function to process scheduled interest for all eligible accounts
+void processScheduledInterest() {
+    FILE *fp = fopen(ACCOUNTS_FILE, "rb+");
+    if (!fp) {
+        printf(RED "Error opening accounts file.\n" RESET);
+        return;
+    }
+    
+    struct Account a;
+    long pos;
+    int processed_count = 0;
+    
+    printf(BLUE "\n--- Processing Scheduled Interest ---\n" RESET);
+    
+    while (fread(&a, sizeof(struct Account), 1, fp)) {
+        pos = ftell(fp) - sizeof(struct Account);
+        
+        // Skip locked accounts
+        if (a.locked) continue;
+        
+        // Initialize last_interest_date if it's 0 (new account)
+        if (a.last_interest_date == 0) {
+            a.last_interest_date = time(NULL);
+            fseek(fp, pos, SEEK_SET);
+            fwrite(&a, sizeof(struct Account), 1, fp);
+            continue;
+        }
+        
+        // Calculate interest if needed
+        if (daysSinceLastInterest(a.last_interest_date) > 0 && a.balance > 0) {
+            calculateInterestForAccount(&a);
+            
+            // Write updated account back to file
+            fseek(fp, pos, SEEK_SET);
+            fwrite(&a, sizeof(struct Account), 1, fp);
+            fflush(fp);
+            
+            processed_count++;
+        }
+    }
+    
+    fclose(fp);
+    printf(GREEN "Processed interest for %d accounts.\n" RESET, processed_count);
+}
+
+// Function to view interest calculation log
+void viewInterestLog() {
+    FILE *fp = fopen(INTEREST_LOG_FILE, "r");
+    if (!fp) {
+        printf(YELLOW "No interest log found.\n" RESET);
+        return;
+    }
+    
+    char line[256];
+    printf(BLUE "\n--- Interest Calculation Log ---\n" RESET);
+    printf(BLUE "%-15s %-20s %-10s %-15s %-15s\n" RESET, 
+           "Account", "Date", "Days", "Interest", "New Balance");
+    printf(BLUE "----------------------------------------------------------------\n" RESET);
+    
+    while (fgets(line, sizeof(line), fp)) {
+        printf("%s", line);
+    }
+    
+    fclose(fp);
+}
+
+// Helper function to calculate days since last interest calculation
+int daysSinceLastInterest(long last_date) {
+    if (last_date == 0) return 1; // For new accounts
+    
+    time_t now = time(NULL);
+    double diff_seconds = difftime(now, last_date);
+    int diff_days = (int)(diff_seconds / (60 * 60 * 24));
+    return diff_days;
+}
+
+// Function to initialize last_interest_date for existing accounts
+void initializeLastInterestDate() {
+    FILE *fp = fopen(ACCOUNTS_FILE, "rb+");
+    if (!fp) return;
+    
+    struct Account a;
+    long pos;
+    
+    while (fread(&a, sizeof(struct Account), 1, fp)) {
+        pos = ftell(fp) - sizeof(struct Account);
+        
+        // If last_interest_date is 0, initialize it to current date
+        if (a.last_interest_date == 0) {
+            a.last_interest_date = time(NULL);
+            fseek(fp, pos, SEEK_SET);
+            fwrite(&a, sizeof(struct Account), 1, fp);
+        }
+    }
+    
+    fclose(fp);
 }
 
 // =========================================================================
@@ -649,6 +802,7 @@ void createAccount()
 
     a.failed_attempts = 0;
     a.locked = 0;
+    a.last_interest_date = time(NULL); // Initialize to current date
 
     FILE *fp = fopen(ACCOUNTS_FILE, "ab");
     if (!fp) {
@@ -969,6 +1123,10 @@ void viewTransactionHistory() {
                 case LOAN_REJECTED:
                     printf(RED "LOAN REJECTED" RESET);
                     printf("| %-11.2f | %-8s\n", t.amount, t.currency);
+                    break;
+                case INTEREST_CREDIT:
+                    printf(GREEN "INTEREST     " RESET);
+                    printf("| %-11.2f | Credit\n", t.amount);
                     break;
             }
         }
@@ -1676,8 +1834,10 @@ void adminMenu() {
         printf(YELLOW "3. Update Account Holder Name\n" RESET);
         printf(YELLOW "4. Delete Account\n" RESET);
         printf(YELLOW "5. Unlock User Account\n" RESET);
-        printf(YELLOW "6. Create Automated Backup\n" RESET);
-        printf(YELLOW "7. Manage Loan Applications\n" RESET);
+
+        printf(YELLOW "6. Process Scheduled Interest\n" RESET);
+        printf(YELLOW "7. View Interest Log\n" RESET);
+
         printf(YELLOW "8. Exit to Main Menu\n" RESET);
         printf(GREEN "Enter your choice: " RESET);
 
@@ -1704,10 +1864,12 @@ void adminMenu() {
                 unlockAccount();
                 break;
             case 6:
-                createAutomatedBackup();
+
+                processScheduledInterest();
                 break;
             case 7:
-                manageLoanApplications();
+                viewInterestLog();
+
                 break;
             case 8:
                 printf(GREEN "Exiting admin menu...\n" RESET);
@@ -1726,7 +1888,11 @@ void adminMenu() {
 int main()
 {
     srand((unsigned int)time(NULL));
-    initializeExchangeRates(); // Initialize exchange rates at startup
+
+    
+    // Initialize last interest dates for existing accounts
+    initializeLastInterestDate();
+
 
     if (!adminInitIfNeeded()) {
         printf(RED "Failed to initialize admin credentials. Exiting.\n" RESET);
